@@ -17,9 +17,18 @@
 package org.keycloak.testsuite.arquillian;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.representations.idm.RealmRepresentation;
+import static org.keycloak.testsuite.arquillian.AppServerTestEnricher.getAppServerQualifiers;
+import org.keycloak.testsuite.client.KeycloakTestingClient;
+import org.keycloak.testsuite.util.TestCleanup;
 
 /**
  *
@@ -36,7 +45,18 @@ public final class TestContext {
 
     private boolean adminLoggedIn;
     
-    private final Map customContext = new HashMap<>();
+    private final Map<Object, Object> customContext = new HashMap<>();
+
+    private Keycloak adminClient;
+    private KeycloakTestingClient testingClient;
+    private List<RealmRepresentation> testRealmReps = new ArrayList<>();
+
+    // Track if particular test was initialized. What exactly means "initialized" is test dependent (Eg. some user in @Before method was created, so we can set initialized to true
+    // to avoid creating user when @Before method is executed for 2nd time)
+    private boolean initialized;
+
+    // Key is realmName, value are objects to clean after the test method
+    private final Map<String, TestCleanup> cleanups = new ConcurrentHashMap<>();
 
     public TestContext(SuiteContext suiteContext, Class testClass) {
         this.suiteContext = suiteContext;
@@ -63,23 +83,43 @@ public final class TestContext {
     public List<ContainerInfo> getAppServerBackendsInfo() {
         return appServerBackendsInfo;
     }
+    
+    public void setAppServerBackendsInfo(List<ContainerInfo> appServerBackendsInfo) {
+        Collections.sort(appServerBackendsInfo);
+        this.appServerBackendsInfo.addAll(appServerBackendsInfo);
+    }
 
     public Class getTestClass() {
         return testClass;
     }
 
     public boolean isAdapterTest() {
-        return appServerInfo != null;
+        return getAppServerQualifiers(testClass) != null;
     }
 
+    public boolean isAdapterContainerEnabled() {
+        if (!isAdapterTest()) return false; //no adapter test
+        if (appServerInfo == null) return false;
+        return getAppServerQualifiers(testClass).contains(appServerInfo.getQualifier());
+    }
+
+    public boolean isAdapterContainerEnabledCluster() {
+        if (!isAdapterTest()) return false; //no adapter test
+        if (appServerBackendsInfo.isEmpty()) return false; //no adapter clustered test
+        
+        List<String> appServerQualifiers = getAppServerQualifiers(testClass);
+        
+        String qualifier = appServerBackendsInfo.stream()
+                .map(ContainerInfo::getQualifier)
+                .collect(Collectors.joining(";"));
+        
+        return appServerQualifiers.contains(qualifier);
+    }
+    
     public boolean isRelativeAdapterTest() {
         return isAdapterTest()
                 && appServerInfo.getQualifier().equals(
                         suiteContext.getAuthServerInfo().getQualifier()); // app server == auth server
-    }
-
-    public boolean isClusteredAdapterTest() {
-        return isAdapterTest() && !appServerBackendsInfo.isEmpty();
     }
 
     public SuiteContext getSuiteContext() {
@@ -89,8 +129,62 @@ public final class TestContext {
     @Override
     public String toString() {
         return "TEST CONTEXT: " + getTestClass().getCanonicalName() + "\n"
-                + (isAdapterTest() ? "App server container: " + getAppServerInfo() + "\n" : "");
+                + (isAdapterTest() ? "Activated @AppServerContainer(" + getAppServerQualifiers(testClass) + ")\n" : "");
     }
+
+    public Keycloak getAdminClient() {
+        return adminClient;
+    }
+
+    public void setAdminClient(Keycloak adminClient) {
+        this.adminClient = adminClient;
+    }
+
+    public KeycloakTestingClient getTestingClient() {
+        return testingClient;
+    }
+
+    public void setTestingClient(KeycloakTestingClient testingClient) {
+        this.testingClient = testingClient;
+    }
+
+    public List<RealmRepresentation> getTestRealmReps() {
+        return testRealmReps;
+    }
+
+    public void setTestRealmReps(List<RealmRepresentation> testRealmReps) {
+        this.testRealmReps = testRealmReps;
+    }
+
+    public void addTestRealmToTestRealmReps(RealmRepresentation testRealmRep) {
+        this.testRealmReps.add(testRealmRep);
+    }
+
+    public boolean isInitialized() {
+        return initialized;
+    }
+
+    public void setInitialized(boolean initialized) {
+        this.initialized = initialized;
+    }
+
+    public TestCleanup getOrCreateCleanup(String realmName) {
+        TestCleanup cleanup = cleanups.get(realmName);
+        if (cleanup == null) {
+            cleanup = new TestCleanup(adminClient, realmName);
+            TestCleanup existing = cleanups.putIfAbsent(realmName, cleanup);
+
+            if (existing != null) {
+                cleanup = existing;
+            }
+        }
+        return cleanup;
+    }
+
+    public Map<String, TestCleanup> getCleanups() {
+        return cleanups;
+    }
+
 
     public Object getCustomValue(Object key) {
         return customContext.get(key);

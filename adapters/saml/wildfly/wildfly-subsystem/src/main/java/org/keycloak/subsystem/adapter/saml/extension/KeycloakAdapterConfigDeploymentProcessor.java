@@ -17,6 +17,8 @@
 
 package org.keycloak.subsystem.adapter.saml.extension;
 
+import static org.keycloak.subsystem.adapter.saml.extension.Elytron.isElytronEnabled;
+
 import org.jboss.as.server.deployment.DeploymentPhaseContext;
 import org.jboss.as.server.deployment.DeploymentUnit;
 import org.jboss.as.server.deployment.DeploymentUnitProcessingException;
@@ -25,10 +27,12 @@ import org.jboss.as.web.common.WarMetaData;
 import org.jboss.dmr.ModelNode;
 import org.jboss.metadata.javaee.spec.ParamValueMetaData;
 import org.jboss.metadata.web.jboss.JBossWebMetaData;
+import org.jboss.metadata.web.spec.ListenerMetaData;
 import org.jboss.metadata.web.spec.LoginConfigMetaData;
 import org.jboss.staxmapper.FormattingXMLStreamWriter;
 import org.jboss.staxmapper.XMLExtendedStreamWriter;
 import org.keycloak.adapters.saml.AdapterConstants;
+import org.keycloak.adapters.saml.elytron.KeycloakConfigurationServletListener;
 import org.keycloak.subsystem.adapter.saml.extension.logging.KeycloakLogger;
 
 import javax.xml.stream.XMLOutputFactory;
@@ -49,21 +53,22 @@ public class KeycloakAdapterConfigDeploymentProcessor implements DeploymentUnitP
     public void deploy(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
 
-        String deploymentName = deploymentUnit.getName();
-        if (Configuration.INSTANCE.getSecureDeployment(deploymentName) != null) {
-            addKeycloakSamlAuthData(phaseContext, deploymentName);
+        if (Configuration.INSTANCE.getSecureDeployment(deploymentUnit) != null) {
+            addKeycloakSamlAuthData(phaseContext);
         }
+
+        addConfigurationListener(phaseContext);
     }
 
-    private void addKeycloakSamlAuthData(DeploymentPhaseContext phaseContext, String deploymentName) throws DeploymentUnitProcessingException {
+    private void addKeycloakSamlAuthData(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
         WarMetaData warMetaData = deploymentUnit.getAttachment(WarMetaData.ATTACHMENT_KEY);
         if (warMetaData == null) {
-            throw new DeploymentUnitProcessingException("WarMetaData not found for " + deploymentName + ".  Make sure you have specified a WAR as your secure-deployment in the Keycloak subsystem.");
+            throw new DeploymentUnitProcessingException("WarMetaData not found for " + deploymentUnit.getName() + ".  Make sure you have specified a WAR as your secure-deployment in the Keycloak subsystem.");
         }
 
         try {
-            addXMLData(getXML(deploymentName), warMetaData);
+            addXMLData(getXML(deploymentUnit), warMetaData);
         } catch (Exception e) {
             throw new DeploymentUnitProcessingException("Failed to configure KeycloakSamlExtension from subsystem model", e);
         }
@@ -80,11 +85,11 @@ public class KeycloakAdapterConfigDeploymentProcessor implements DeploymentUnitP
         }
         loginConfig.setAuthMethod("KEYCLOAK-SAML");
 
-        KeycloakLogger.ROOT_LOGGER.deploymentSecured(deploymentName);
+        KeycloakLogger.ROOT_LOGGER.deploymentSecured(deploymentUnit.getName());
     }
 
-    private String getXML(String deploymentName) throws XMLStreamException {
-        ModelNode node = Configuration.INSTANCE.getSecureDeployment(deploymentName);
+    private String getXML(DeploymentUnit deploymentUnit) throws XMLStreamException {
+        ModelNode node = Configuration.INSTANCE.getSecureDeployment(deploymentUnit);
         if (node != null) {
             KeycloakSubsystemParser writer = new KeycloakSubsystemParser();
             ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -124,5 +129,35 @@ public class KeycloakAdapterConfigDeploymentProcessor implements DeploymentUnitP
     @Override
     public void undeploy(DeploymentUnit du) {
 
+    }
+
+    private void addConfigurationListener(DeploymentPhaseContext phaseContext) {
+        DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
+        WarMetaData warMetaData = deploymentUnit.getAttachment(WarMetaData.ATTACHMENT_KEY);
+        if (warMetaData == null) {
+            return;
+        }
+
+        JBossWebMetaData webMetaData = warMetaData.getMergedJBossWebMetaData();
+        if (webMetaData == null) {
+            webMetaData = new JBossWebMetaData();
+            warMetaData.setMergedJBossWebMetaData(webMetaData);
+        }
+
+        LoginConfigMetaData loginConfig = webMetaData.getLoginConfig();
+        if (loginConfig == null) {
+            return;
+        }
+        if (!loginConfig.getAuthMethod().equals("KEYCLOAK-SAML")) {
+            return;
+        }
+
+        if (isElytronEnabled(phaseContext)) {
+            ListenerMetaData listenerMetaData = new ListenerMetaData();
+
+            listenerMetaData.setListenerClass(KeycloakConfigurationServletListener.class.getName());
+
+            webMetaData.getListeners().add(listenerMetaData);
+        }
     }
 }

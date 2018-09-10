@@ -19,6 +19,9 @@
 
 <module xmlns="urn:jboss:module:1.1" name="org.keycloak.keycloak-saml-wildfly-subsystem">
 
+    <properties>
+        <property name="jboss.api" value="private"/>
+    </properties>
     <resources>
         <resource-root path="."/>
         <!-- Insert resources here -->
@@ -36,5 +39,8 @@
         <module name="org.jboss.vfs"/>
         <module name="org.jboss.as.web-common"/>
         <module name="org.jboss.metadata"/>
+        <module name="org.apache.httpcomponents"/>
+        <module name="org.infinispan.cachestore.remote"/>
+        <module name="org.keycloak.keycloak-saml-wildfly-elytron-adapter"/>
     </dependencies>
 </module>

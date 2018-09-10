@@ -20,15 +20,25 @@ package org.keycloak.services.resources.admin;
 import org.jboss.resteasy.annotations.cache.NoCache;
 import org.jboss.resteasy.spi.NotFoundException;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.models.ClientModel;
+import org.keycloak.models.Constants;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ModelDuplicateException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleContainerModel;
 import org.keycloak.models.RoleModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.ModelToRepresentation;
+import org.keycloak.representations.idm.ManagementPermissionReference;
 import org.keycloak.representations.idm.RoleRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.services.ErrorResponse;
+import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
+import org.keycloak.services.resources.admin.permissions.AdminPermissionManagement;
+import org.keycloak.services.resources.admin.permissions.AdminPermissions;
 
+import javax.ws.rs.BadRequestException;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -37,33 +47,37 @@ import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 /**
+ * @resource Roles
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
 public class RoleContainerResource extends RoleResource {
     private final RealmModel realm;
-    private final RealmAuth auth;
+    protected AdminPermissionEvaluator auth;
+
     protected RoleContainerModel roleContainer;
     private AdminEventBuilder adminEvent;
     private UriInfo uriInfo;
+    private KeycloakSession session;
 
-    public RoleContainerResource(UriInfo uriInfo, RealmModel realm, RealmAuth auth, RoleContainerModel roleContainer, AdminEventBuilder adminEvent) {
+    public RoleContainerResource(KeycloakSession session, UriInfo uriInfo, RealmModel realm,
+                                 AdminPermissionEvaluator auth, RoleContainerModel roleContainer, AdminEventBuilder adminEvent) {
         super(realm);
         this.uriInfo = uriInfo;
         this.realm = realm;
         this.auth = auth;
         this.roleContainer = roleContainer;
         this.adminEvent = adminEvent;
+        this.session = session;
     }
 
     /**
@@ -75,7 +89,7 @@ public class RoleContainerResource extends RoleResource {
     @NoCache
     @Produces(MediaType.APPLICATION_JSON)
     public List<RoleRepresentation> getRoles() {
-        auth.requireAny();
+        auth.roles().requireList(roleContainer);
 
         Set<RoleModel> roleModels = roleContainer.getRoles();
         List<RoleRepresentation> roles = new ArrayList<RoleRepresentation>();
@@ -94,15 +108,25 @@ public class RoleContainerResource extends RoleResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createRole(final RoleRepresentation rep) {
-        auth.requireManage();
+        auth.roles().requireManage(roleContainer);
+
+        if (rep.getName() == null) {
+            throw new BadRequestException();
+        }
 
         try {
             RoleModel role = roleContainer.addRole(rep.getName());
             role.setDescription(rep.getDescription());
-            boolean scopeParamRequired = rep.isScopeParamRequired()==null ? false : rep.isScopeParamRequired();
-            role.setScopeParamRequired(scopeParamRequired);
 
-            adminEvent.operation(OperationType.CREATE).resourcePath(uriInfo, role.getId()).representation(rep).success();
+            rep.setId(role.getId());
+
+            if (role.isClientRole()) {
+                adminEvent.resource(ResourceType.CLIENT_ROLE);
+            } else {
+                adminEvent.resource(ResourceType.REALM_ROLE);
+            }
+
+            adminEvent.operation(OperationType.CREATE).resourcePath(uriInfo, role.getName()).representation(rep).success();
 
             return Response.created(uriInfo.getAbsolutePathBuilder().path(role.getName()).build()).build();
         } catch (ModelDuplicateException e) {
@@ -121,7 +145,7 @@ public class RoleContainerResource extends RoleResource {
     @NoCache
     @Produces(MediaType.APPLICATION_JSON)
     public RoleRepresentation getRole(final @PathParam("role-name") String roleName) {
-        auth.requireView();
+        auth.roles().requireView(roleContainer);
 
         RoleModel roleModel = roleContainer.getRole(roleName);
         if (roleModel == null) {
@@ -140,14 +164,18 @@ public class RoleContainerResource extends RoleResource {
     @DELETE
     @NoCache
     public void deleteRole(final @PathParam("role-name") String roleName) {
-        auth.requireManage();
-
-        RoleRepresentation rep = getRole(roleName);
+        auth.roles().requireManage(roleContainer);
         RoleModel role = roleContainer.getRole(roleName);
         if (role == null) {
             throw new NotFoundException("Could not find role");
         }
         deleteRole(role);
+
+        if (role.isClientRole()) {
+            adminEvent.resource(ResourceType.CLIENT_ROLE);
+        } else {
+            adminEvent.resource(ResourceType.REALM_ROLE);
+        }
 
         adminEvent.operation(OperationType.DELETE).resourcePath(uriInfo).success();
 
@@ -164,14 +192,19 @@ public class RoleContainerResource extends RoleResource {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     public Response updateRole(final @PathParam("role-name") String roleName, final RoleRepresentation rep) {
-        auth.requireManage();
-
+        auth.roles().requireManage(roleContainer);
         RoleModel role = roleContainer.getRole(roleName);
         if (role == null) {
             throw new NotFoundException("Could not find role");
         }
         try {
             updateRole(rep, role);
+
+            if (role.isClientRole()) {
+                adminEvent.resource(ResourceType.CLIENT_ROLE);
+            } else {
+                adminEvent.resource(ResourceType.REALM_ROLE);
+            }
 
             adminEvent.operation(OperationType.UPDATE).resourcePath(uriInfo).representation(rep).success();
 
@@ -191,13 +224,12 @@ public class RoleContainerResource extends RoleResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public void addComposites(final @PathParam("role-name") String roleName, List<RoleRepresentation> roles) {
-        auth.requireManage();
-
+        auth.roles().requireManage(roleContainer);
         RoleModel role = roleContainer.getRole(roleName);
         if (role == null) {
             throw new NotFoundException("Could not find role");
         }
-        addComposites(adminEvent, uriInfo, roles, role);
+        addComposites(auth, adminEvent, uriInfo, roles, role);
     }
 
     /**
@@ -211,8 +243,7 @@ public class RoleContainerResource extends RoleResource {
     @NoCache
     @Produces(MediaType.APPLICATION_JSON)
     public Set<RoleRepresentation> getRoleComposites(final @PathParam("role-name") String roleName) {
-        auth.requireManage();
-
+        auth.roles().requireView(roleContainer);
         RoleModel role = roleContainer.getRole(roleName);
         if (role == null) {
             throw new NotFoundException("Could not find role");
@@ -231,8 +262,7 @@ public class RoleContainerResource extends RoleResource {
     @NoCache
     @Produces(MediaType.APPLICATION_JSON)
     public Set<RoleRepresentation> getRealmRoleComposites(final @PathParam("role-name") String roleName) {
-        auth.requireManage();
-
+        auth.roles().requireView(roleContainer);
         RoleModel role = roleContainer.getRole(roleName);
         if (role == null) {
             throw new NotFoundException("Could not find role");
@@ -251,11 +281,9 @@ public class RoleContainerResource extends RoleResource {
     @GET
     @NoCache
     @Produces(MediaType.APPLICATION_JSON)
-    public Set<RoleRepresentation> getClientRoleComposites(@Context final UriInfo uriInfo,
-                                                                final @PathParam("role-name") String roleName,
+    public Set<RoleRepresentation> getClientRoleComposites(final @PathParam("role-name") String roleName,
                                                                 final @PathParam("client") String client) {
-        auth.requireManage();
-
+        auth.roles().requireView(roleContainer);
         RoleModel role = roleContainer.getRole(roleName);
         if (role == null) {
             throw new NotFoundException("Could not find role");
@@ -281,14 +309,97 @@ public class RoleContainerResource extends RoleResource {
     public void deleteComposites(
                                    final @PathParam("role-name") String roleName,
                                    List<RoleRepresentation> roles) {
-        auth.requireManage();
 
+        auth.roles().requireManage(roleContainer);
         RoleModel role = roleContainer.getRole(roleName);
         if (role == null) {
             throw new NotFoundException("Could not find role");
         }
-        deleteComposites(roles, role);
-        adminEvent.operation(OperationType.DELETE).resourcePath(uriInfo).success();
+        deleteComposites(adminEvent, uriInfo, roles, role);
     }
 
+    /**
+     * Return object stating whether role Authoirzation permissions have been initialized or not and a reference
+     *
+     *
+     * @param roleName
+     * @return
+     */
+    @Path("{role-name}/management/permissions")
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    @NoCache
+    public ManagementPermissionReference getManagementPermissions(final @PathParam("role-name") String roleName) {
+        auth.roles().requireView(roleContainer);
+        RoleModel role = roleContainer.getRole(roleName);
+        if (role == null) {
+            throw new NotFoundException("Could not find role");
+        }
+
+        AdminPermissionManagement permissions = AdminPermissions.management(session, realm);
+        if (!permissions.roles().isPermissionsEnabled(role)) {
+            return new ManagementPermissionReference();
+        }
+        return RoleByIdResource.toMgmtRef(role, permissions);
+    }
+
+    /**
+     * Return object stating whether role Authoirzation permissions have been initialized or not and a reference
+     *
+     *
+     * @param roleName
+     * @return initialized manage permissions reference
+     */
+    @Path("{role-name}/management/permissions")
+    @PUT
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    @NoCache
+    public ManagementPermissionReference setManagementPermissionsEnabled(final @PathParam("role-name") String roleName, ManagementPermissionReference ref) {
+        auth.roles().requireManage(roleContainer);
+        RoleModel role = roleContainer.getRole(roleName);
+        if (role == null) {
+            throw new NotFoundException("Could not find role");
+        }
+
+        AdminPermissionManagement permissions = AdminPermissions.management(session, realm);
+        permissions.roles().setPermissionsEnabled(role, ref.isEnabled());
+        if (ref.isEnabled()) {
+            return RoleByIdResource.toMgmtRef(role, permissions);
+        } else {
+            return new ManagementPermissionReference();
+        }
+    }
+
+    /**
+     * Return List of Users that have the specified role name 
+     *
+     *
+     * @param roleName
+     * @param firstResult
+     * @param maxResults
+     * @return initialized manage permissions reference
+     */
+    @Path("{role-name}/users")
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    @NoCache
+    public  List<UserRepresentation> getUsersInRole(final @PathParam("role-name") String roleName, 
+                                                    @QueryParam("first") Integer firstResult,
+                                                    @QueryParam("max") Integer maxResults) {
+        
+        auth.roles().requireView(roleContainer);
+        firstResult = firstResult != null ? firstResult : 0;
+        maxResults = maxResults != null ? maxResults : Constants.DEFAULT_MAX_RESULTS;
+        
+        RoleModel role = roleContainer.getRole(roleName);
+        List<UserRepresentation> results = new ArrayList<UserRepresentation>();
+        List<UserModel> userModels = session.users().getRoleMembers(realm, role, firstResult, maxResults);
+
+        for (UserModel user : userModels) {
+            results.add(ModelToRepresentation.toRepresentation(session, realm, user));
+        }
+        return results; 
+        
+    }    
 }

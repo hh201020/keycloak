@@ -20,10 +20,10 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>1.9.1.Final-SNAPSHOT</version>
+        <version>4.5.0.Final-SNAPSHOT</version>
     </parent>
 
-    <name>Examples</name>
+    <name>Keycloak Examples</name>
     <description/>
     <modelVersion>4.0.0</modelVersion>
 
@@ -61,7 +61,6 @@
         <module>js-console</module>
         <module>multi-tenant</module>
         <module>basic-auth</module>
-        <module>fuse</module>
         <module>kerberos</module>
         <module>themes</module>
         <module>saml</module>

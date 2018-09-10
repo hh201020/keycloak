@@ -27,12 +27,20 @@ import org.eclipse.jetty.security.authentication.FormAuthenticator;
 import org.eclipse.jetty.security.authentication.LoginAuthenticator;
 import org.eclipse.jetty.server.Authentication;
 import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.server.UserIdentity;
 import org.eclipse.jetty.server.handler.ContextHandler;
-import org.eclipse.jetty.util.URIUtil;
 import org.jboss.logging.Logger;
+import org.keycloak.adapters.jetty.spi.JettyHttpFacade;
+import org.keycloak.adapters.jetty.spi.JettyUserSessionManagement;
+import org.keycloak.adapters.saml.AdapterConstants;
+import org.keycloak.adapters.saml.SamlAuthenticator;
+import org.keycloak.adapters.saml.SamlConfigResolver;
+import org.keycloak.adapters.saml.SamlDeployment;
+import org.keycloak.adapters.saml.SamlDeploymentContext;
+import org.keycloak.adapters.saml.SamlSession;
 import org.keycloak.adapters.saml.SamlSessionStore;
+import org.keycloak.adapters.saml.config.parsers.DeploymentBuilder;
+import org.keycloak.adapters.saml.config.parsers.ResourceLoader;
 import org.keycloak.adapters.saml.profile.SamlAuthenticationHandler;
 import org.keycloak.adapters.saml.profile.webbrowsersso.BrowserHandler;
 import org.keycloak.adapters.saml.profile.webbrowsersso.SamlEndpoint;
@@ -42,16 +50,6 @@ import org.keycloak.adapters.spi.AuthOutcome;
 import org.keycloak.adapters.spi.HttpFacade;
 import org.keycloak.adapters.spi.InMemorySessionIdMapper;
 import org.keycloak.adapters.spi.SessionIdMapper;
-import org.keycloak.adapters.jetty.spi.JettyHttpFacade;
-import org.keycloak.adapters.jetty.spi.JettyUserSessionManagement;
-import org.keycloak.adapters.saml.AdapterConstants;
-import org.keycloak.adapters.saml.SamlAuthenticator;
-import org.keycloak.adapters.saml.SamlConfigResolver;
-import org.keycloak.adapters.saml.SamlDeployment;
-import org.keycloak.adapters.saml.SamlDeploymentContext;
-import org.keycloak.adapters.saml.SamlSession;
-import org.keycloak.adapters.saml.config.parsers.DeploymentBuilder;
-import org.keycloak.adapters.saml.config.parsers.ResourceLoader;
 import org.keycloak.saml.common.exceptions.ParsingException;
 
 import javax.security.auth.Subject;
@@ -68,6 +66,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -106,11 +105,13 @@ public abstract class AbstractSamlAuthenticator extends LoginAuthenticator {
 
     protected JettySamlSessionStore createJettySamlSessionStore(Request request, HttpFacade facade, SamlDeployment resolvedDeployment) {
         JettySamlSessionStore store;
-        store = new JettySamlSessionStore(request, createSessionTokenStore(request, resolvedDeployment), facade, idMapper, new JettyUserSessionManagement(request.getSessionManager()), resolvedDeployment);
+        store = new JettySamlSessionStore(request, createSessionTokenStore(request, resolvedDeployment), facade, idMapper, createSessionManagement(request), resolvedDeployment);
         return store;
     }
 
     public abstract AdapterSessionStore createSessionTokenStore(Request request, SamlDeployment resolvedDeployment);
+
+    public abstract JettyUserSessionManagement createSessionManagement(Request request);
 
     public void logoutCurrent(Request request) {
         JettyHttpFacade facade = new JettyHttpFacade(request, null);
@@ -119,16 +120,27 @@ public abstract class AbstractSamlAuthenticator extends LoginAuthenticator {
         tokenStore.logoutAccount();
     }
 
-    protected void forwardToLogoutPage(Request request, HttpServletResponse response, SamlDeployment deployment) {
-        RequestDispatcher disp = request.getRequestDispatcher(deployment.getLogoutPage());
-        //make sure the login page is never cached
-        response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-        response.setHeader("Pragma", "no-cache");
-        response.setHeader("Expires", "0");
+    private static final Pattern PROTOCOL_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:");
 
+    protected void forwardToLogoutPage(Request request, HttpServletResponse response, SamlDeployment deployment) {
+        final String location = deployment.getLogoutPage();
 
         try {
-            disp.forward(request, response);
+            //make sure the login page is never cached
+            response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            response.setHeader("Pragma", "no-cache");
+            response.setHeader("Expires", "0");
+
+            if (location == null) {
+                log.warn("Logout page not set.");
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            } else if (PROTOCOL_PATTERN.matcher(location).find()) {
+                response.sendRedirect(response.encodeRedirectURL(location));
+            } else {
+                RequestDispatcher disp = request.getRequestDispatcher(location);
+
+                disp.forward(request, response);
+            }
         } catch (ServletException e) {
             throw new RuntimeException(e);
         } catch (IOException e) {
@@ -372,13 +384,13 @@ public abstract class AbstractSamlAuthenticator extends LoginAuthenticator {
         Authentication authentication = request.getAuthentication();
         if (!(authentication instanceof KeycloakAuthentication)) {
             UserIdentity userIdentity = createIdentity(samlSession);
-            authentication = createAuthentication(userIdentity);
+            authentication = createAuthentication(userIdentity, request);
             request.setAuthentication(authentication);
         }
         return authentication;
     }
 
-    public abstract Authentication createAuthentication(UserIdentity userIdentity);
+    public abstract Authentication createAuthentication(UserIdentity userIdentity, Request request);
 
     public static abstract class KeycloakAuthentication extends UserAuthentication {
         public KeycloakAuthentication(String method, UserIdentity userIdentity) {

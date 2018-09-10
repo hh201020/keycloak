@@ -17,17 +17,14 @@
 package org.keycloak.services.resources.admin;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.jboss.logging.Logger;
 import org.jboss.resteasy.annotations.cache.NoCache;
 import org.jboss.resteasy.spi.HttpRequest;
 import org.jboss.resteasy.spi.HttpResponse;
 import org.jboss.resteasy.spi.NotFoundException;
+import org.keycloak.Config;
 import org.keycloak.common.ClientConnection;
 import org.keycloak.common.Version;
-import org.keycloak.theme.BrowserSecurityHeaderSetup;
-import org.keycloak.theme.FreeMarkerException;
-import org.keycloak.theme.FreeMarkerUtil;
-import org.keycloak.theme.Theme;
-import org.keycloak.theme.ThemeProvider;
 import org.keycloak.models.AdminRoles;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
@@ -36,39 +33,43 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.protocol.oidc.OIDCLoginProtocolService;
-import org.keycloak.services.ServicesLogger;
+import org.keycloak.services.Urls;
 import org.keycloak.services.managers.AppAuthManager;
-import org.keycloak.services.managers.ClientManager;
 import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.managers.ClientManager;
 import org.keycloak.services.managers.RealmManager;
 import org.keycloak.services.resources.KeycloakApplication;
-import org.keycloak.services.Urls;
+import org.keycloak.theme.BrowserSecurityHeaderSetup;
+import org.keycloak.theme.FreeMarkerException;
+import org.keycloak.theme.FreeMarkerUtil;
+import org.keycloak.theme.Theme;
+import org.keycloak.utils.MediaType;
 
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
-import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriInfo;
 import javax.ws.rs.ext.Providers;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.*;
-import javax.ws.rs.QueryParam;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
 public class AdminConsole {
-    protected static final ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
-
-    @Context
-    protected UriInfo uriInfo;
+    protected static final Logger logger = Logger.getLogger(AdminConsole.class);
 
     @Context
     protected ClientConnection clientConnection;
@@ -172,7 +173,7 @@ public class AdminConsole {
         if (consoleApp == null) {
             throw new NotFoundException("Could not find admin console client");
         }
-        return new ClientManager().toInstallationRepresentation(realm, consoleApp, keycloak.getBaseUri(uriInfo));
+        return new ClientManager(new RealmManager(session)).toInstallationRepresentation(realm, consoleApp, keycloak.getBaseUri(session.getContext().getUri()));
 
     }
 
@@ -188,7 +189,7 @@ public class AdminConsole {
     @NoCache
     public Response whoAmI(final @Context HttpHeaders headers) {
         RealmManager realmManager = new RealmManager(session);
-        AuthenticationManager.AuthResult authResult = authManager.authenticateBearerToken(session, realm, uriInfo, clientConnection, headers);
+        AuthenticationManager.AuthResult authResult = authManager.authenticateBearerToken(session, realm, session.getContext().getUri(), clientConnection, headers);
         if (authResult == null) {
             return Response.status(401).build();
         }
@@ -258,10 +259,10 @@ public class AdminConsole {
     @GET
     @NoCache
     public Response logout() {
-        URI redirect = AdminRoot.adminConsoleUrl(uriInfo).build(realm.getName());
+        URI redirect = AdminRoot.adminConsoleUrl(session.getContext().getUri()).build(realm.getName());
 
         return Response.status(302).location(
-                OIDCLoginProtocolService.logoutUrl(uriInfo).queryParam("redirect_uri", redirect.toString()).build(realm.getName())
+                OIDCLoginProtocolService.logoutUrl(session.getContext().getUri()).queryParam("redirect_uri", redirect.toString()).build(realm.getName())
         ).build();
     }
 
@@ -278,51 +279,41 @@ public class AdminConsole {
     @GET
     @NoCache
     public Response getMainPage() throws URISyntaxException, IOException, FreeMarkerException {
-        if (!uriInfo.getRequestUri().getPath().endsWith("/")) {
-            return Response.status(302).location(uriInfo.getRequestUriBuilder().path("/").build()).build();
+        if (!session.getContext().getUri().getRequestUri().getPath().endsWith("/")) {
+            return Response.status(302).location(session.getContext().getUri().getRequestUriBuilder().path("/").build()).build();
         } else {
-            Theme theme = getTheme();
+            Theme theme = AdminRoot.getTheme(session, realm);
 
             Map<String, Object> map = new HashMap<>();
 
-            URI baseUri = uriInfo.getBaseUri();
+            URI baseUri = session.getContext().getUri().getBaseUri();
 
-            String authUrl = baseUri.toString();
-            authUrl = authUrl.substring(0, authUrl.length() - 1);
-
-            map.put("authUrl", authUrl);
-            map.put("resourceUrl", Urls.themeRoot(baseUri) + "/admin/" + theme.getName());
+            map.put("authUrl", session.getContext().getContextPath());
+            map.put("consoleBaseUrl", Urls.adminConsoleRoot(baseUri, realm.getName()).getPath());
+            map.put("resourceUrl", Urls.themeRoot(baseUri).getPath() + "/admin/" + theme.getName());
+            map.put("masterRealm", Config.getAdminRealm());
             map.put("resourceVersion", Version.RESOURCES_VERSION);
             map.put("properties", theme.getProperties());
 
             FreeMarkerUtil freeMarkerUtil = new FreeMarkerUtil();
             String result = freeMarkerUtil.processTemplate(map, "index.ftl", theme);
-            Response.ResponseBuilder builder = Response.status(Response.Status.OK).type(MediaType.TEXT_HTML).entity(result);
+            Response.ResponseBuilder builder = Response.status(Response.Status.OK).type(MediaType.TEXT_HTML_UTF_8).language(Locale.ENGLISH).entity(result);
             BrowserSecurityHeaderSetup.headers(builder, realm);
             return builder.build();
         }
     }
 
-    private Theme getTheme() throws IOException {
-        ThemeProvider themeProvider = session.getProvider(ThemeProvider.class, "extending");
-        return themeProvider.getTheme(realm.getAdminTheme(), Theme.Type.ADMIN);
-    }
-
     @GET
     @Path("{indexhtml: index.html}") // this expression is a hack to get around jaxdoclet generation bug.  Doesn't like index.html
     public Response getIndexHtmlRedirect() {
-        return Response.status(302).location(uriInfo.getRequestUriBuilder().path("../").build()).build();
+        return Response.status(302).location(session.getContext().getUri().getRequestUriBuilder().path("../").build()).build();
     }
 
     @GET
     @Path("messages.json")
     @Produces(MediaType.APPLICATION_JSON)
     public Properties getMessages(@QueryParam("lang") String lang) {
-        try {
-            Locale locale = lang != null ? Locale.forLanguageTag(lang) : Locale.ENGLISH;
-            return getTheme().getMessages("admin-messages", locale);
-        } catch (IOException e) {
-            throw new WebApplicationException("Failed to load message bundle", e);
-        }
+        return AdminRoot.getMessages(session, realm, lang, "admin-messages");
     }
+
 }

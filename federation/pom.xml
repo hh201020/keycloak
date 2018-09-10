@@ -22,7 +22,7 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>1.9.1.Final-SNAPSHOT</version>
+        <version>4.5.0.Final-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -33,8 +33,9 @@
     <description />
 
     <modules>
-        <module>ldap</module>
         <module>kerberos</module>
+        <module>ldap</module>
+        <module>sssd</module>
     </modules>
 
 </project>

@@ -1,11 +1,12 @@
 package org.keycloak.testsuite.arquillian.h2;
 
-import java.sql.SQLException;
+import org.h2.tools.Server;
 import org.jboss.arquillian.core.api.annotation.Observes;
 import org.jboss.arquillian.test.spi.event.suite.AfterSuite;
 import org.jboss.arquillian.test.spi.event.suite.BeforeSuite;
 import org.jboss.logging.Logger;
-import org.h2.tools.Server;
+
+import java.sql.SQLException;
 
 /**
  * Starts H2 before suite and stops it after.
@@ -20,7 +21,7 @@ public class H2TestEnricher {
 
     private Server server = null;
 
-    public void startH2(@Observes(precedence = 2) BeforeSuite event) throws SQLException {
+    public void startH2(@Observes(precedence = 3) BeforeSuite event) throws SQLException {
         if (runH2) {
             log.info("Starting H2 database.");
             server = Server.createTcpServer();

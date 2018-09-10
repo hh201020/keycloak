@@ -31,6 +31,8 @@ import java.lang.reflect.Method;
  * @version $Revision: 1 $
  */
 public class ProtocolMapperUtils {
+
+    public static final String USER_ROLE = "user.role";
     public static final String USER_ATTRIBUTE = "user.attribute";
     public static final String USER_SESSION_NOTE = "user.session.note";
     public static final String MULTIVALUED = "multivalued";
@@ -38,6 +40,19 @@ public class ProtocolMapperUtils {
     public static final String USER_MODEL_PROPERTY_HELP_TEXT = "usermodel.prop.tooltip";
     public static final String USER_MODEL_ATTRIBUTE_LABEL = "usermodel.attr.label";
     public static final String USER_MODEL_ATTRIBUTE_HELP_TEXT = "usermodel.attr.tooltip";
+
+    public static final String USER_MODEL_CLIENT_ROLE_MAPPING_CLIENT_ID = "usermodel.clientRoleMapping.clientId";
+    public static final String USER_MODEL_CLIENT_ROLE_MAPPING_CLIENT_ID_LABEL = "usermodel.clientRoleMapping.clientId.label";
+    public static final String USER_MODEL_CLIENT_ROLE_MAPPING_CLIENT_ID_HELP_TEXT = "usermodel.clientRoleMapping.clientId.tooltip";
+
+    public static final String USER_MODEL_CLIENT_ROLE_MAPPING_ROLE_PREFIX = "usermodel.clientRoleMapping.rolePrefix";
+    public static final String USER_MODEL_CLIENT_ROLE_MAPPING_ROLE_PREFIX_LABEL = "usermodel.clientRoleMapping.rolePrefix.label";
+    public static final String USER_MODEL_CLIENT_ROLE_MAPPING_ROLE_PREFIX_HELP_TEXT = "usermodel.clientRoleMapping.rolePrefix.tooltip";
+
+    public static final String USER_MODEL_REALM_ROLE_MAPPING_ROLE_PREFIX = "usermodel.realmRoleMapping.rolePrefix";
+    public static final String USER_MODEL_REALM_ROLE_MAPPING_ROLE_PREFIX_LABEL = "usermodel.realmRoleMapping.rolePrefix.label";
+    public static final String USER_MODEL_REALM_ROLE_MAPPING_ROLE_PREFIX_HELP_TEXT = "usermodel.realmRoleMapping.rolePrefix.tooltip";
+
     public static final String USER_SESSION_MODEL_NOTE_LABEL = "userSession.modelNote.label";
     public static final String USER_SESSION_MODEL_NOTE_HELP_TEXT = "userSession.modelNote.tooltip";
     public static final String MULTIVALUED_LABEL = "multivalued.label";
@@ -71,17 +86,13 @@ public class ProtocolMapperUtils {
      * @return The builtin locale mapper.
      */
     public static ProtocolMapperModel findLocaleMapper(KeycloakSession session) {
-        ProtocolMapperModel found = null;
         for (ProviderFactory p : session.getKeycloakSessionFactory().getProviderFactories(LoginProtocol.class)) {
             LoginProtocolFactory factory = (LoginProtocolFactory) p;
-            for (ProtocolMapperModel mapper : factory.getBuiltinMappers()) {
-                if (mapper.getName().equals(OIDCLoginProtocolFactory.LOCALE) && mapper.getProtocol().equals(OIDCLoginProtocol.LOGIN_PROTOCOL)) {
-                    found = mapper;
-                    break;
-                }
+            ProtocolMapperModel found = factory.getBuiltinMappers().get(OIDCLoginProtocolFactory.LOCALE);
+            if (found != null && found.getProtocol().equals(OIDCLoginProtocol.LOGIN_PROTOCOL)) {
+                return found;
             }
-            if (found != null) break;
         }
-        return found;
+        return null;
     }
 }

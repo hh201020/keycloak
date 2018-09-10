@@ -17,18 +17,20 @@
  */
 package org.keycloak.testsuite.console.page.users;
 
+import org.jboss.arquillian.drone.api.annotation.Drone;
+import org.keycloak.representations.idm.UserRepresentation;
+import org.keycloak.testsuite.console.page.AdminConsoleRealm;
+import org.keycloak.testsuite.console.page.fragment.DataTable;
 import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.keycloak.representations.idm.UserRepresentation;
 
-import org.keycloak.testsuite.console.page.AdminConsoleRealm;
-import org.keycloak.testsuite.console.page.fragment.DataTable;
-import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
-import static org.openqa.selenium.By.*;
+import static org.keycloak.testsuite.util.UIUtils.clickLink;
+import static org.openqa.selenium.By.tagName;
 
 /**
  *
@@ -50,7 +52,7 @@ public class Users extends AdminConsoleRealm {
     public static final String IMPERSONATE = "Impersonate";
     public static final String DELETE = "Delete";
 
-    @FindBy(xpath = "//div[./h1[text()='Users']]/table")
+    @FindBy(id = "user-table")
     private UsersTable table;
 
     public UsersTable table() {
@@ -58,6 +60,9 @@ public class Users extends AdminConsoleRealm {
     }
 
     public class UsersTable extends DataTable {
+
+        @Drone
+        private WebDriver driver;
 
         public List<UserRepresentation> searchUsers(String searchPattern) {
             search(searchPattern);
@@ -73,11 +78,7 @@ public class Users extends AdminConsoleRealm {
         }
 
         public void clickUser(String username) {
-            waitUntilElement(body()).is().present();
-            WebElement link = body().findElement(
-                    By.xpath(".//tr/td[./following::td[text()='" + username + "']]/a")
-            );
-            link.click();
+            clickLink(getRowByUsername(username).findElement(By.xpath("./td[position()=1]")));
         }
 
         public void editUser(String username) {
@@ -137,11 +138,9 @@ public class Users extends AdminConsoleRealm {
         }
 
         protected WebElement getRowByUsername(String userName) {
-            WebElement row = body().findElement(
-                    By.xpath(".//tr[./td/following::td[text()='" + userName + "']]")
+            return body().findElement(
+                    By.xpath(".//tr[./td[position()=2 and text()='" + userName + "']]")
             );
-            waitUntilElement(row).is().present();
-            return row;
         }
 
     }

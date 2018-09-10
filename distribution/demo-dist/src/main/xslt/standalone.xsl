@@ -1,26 +1,26 @@
 <!--
-  ~ Copyright 2016 Red Hat, Inc. and/or its affiliates
-  ~ and other contributors as indicated by the @author tags.
-  ~
-  ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ you may not use this file except in compliance with the License.
-  ~ You may obtain a copy of the License at
-  ~
-  ~ http://www.apache.org/licenses/LICENSE-2.0
-  ~
-  ~ Unless required by applicable law or agreed to in writing, software
-  ~ distributed under the License is distributed on an "AS IS" BASIS,
-  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  ~ See the License for the specific language governing permissions and
-  ~ limitations under the License.
-  -->
+~ Copyright 2016 Red Hat, Inc. and/or its affiliates
+~ and other contributors as indicated by the @author tags.
+~
+~ Licensed under the Apache License, Version 2.0 (the "License");
+~ you may not use this file except in compliance with the License.
+~ You may obtain a copy of the License at
+~
+~ http://www.apache.org/licenses/LICENSE-2.0
+~
+~ Unless required by applicable law or agreed to in writing, software
+~ distributed under the License is distributed on an "AS IS" BASIS,
+~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+~ See the License for the specific language governing permissions and
+~ limitations under the License.
+-->
 
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:xalan="http://xml.apache.org/xalan"
-                xmlns:j="urn:jboss:domain:4.0"
-                xmlns:ds="urn:jboss:domain:datasources:4.0"
+                xmlns:j="urn:jboss:domain:7.0"
+                xmlns:ds="urn:jboss:domain:datasources:5.0"
                 xmlns:k="urn:jboss:domain:keycloak:1.1"
-                xmlns:sec="urn:jboss:domain:security:1.2"
+                xmlns:sec="urn:jboss:domain:security:2.0"
                 version="2.0"
                 exclude-result-prefixes="xalan j ds k sec">
 
@@ -57,9 +57,7 @@
     <xsl:template match="//j:profile">
         <xsl:copy>
             <xsl:apply-templates select="node()|@*"/>
-            <subsystem xmlns="urn:jboss:domain:keycloak-server:1.1">
-                <web-context>auth</web-context>
-            </subsystem>
+            <xsl:copy-of select="document('../../../target/dependency/default-config/keycloak-server-default-config.xml')"/>
             <subsystem xmlns="urn:jboss:domain:keycloak:1.1"/>
             <subsystem xmlns="urn:jboss:domain:keycloak-saml:1.1"/>
         </xsl:copy>
@@ -83,15 +81,27 @@
 
     <xsl:template match="//*[local-name()='subsystem' and starts-with(namespace-uri(), $inf)]">
         <xsl:copy>
-            <cache-container name="keycloak" jndi-name="infinispan/Keycloak">
-                <local-cache name="realms"/>
-                <local-cache name="users"/>
+            <cache-container name="keycloak">
+                <local-cache name="realms">
+                    <object-memory size="10000"/>
+                </local-cache>
+                <local-cache name="users">
+                    <object-memory size="10000"/>
+                </local-cache>
                 <local-cache name="sessions"/>
+                <local-cache name="authenticationSessions"/>
                 <local-cache name="offlineSessions"/>
+                <local-cache name="clientSessions"/>
+                <local-cache name="offlineClientSessions"/>
                 <local-cache name="loginFailures"/>
+                <local-cache name="authorization">
+                    <object-memory size="10000"/>
+                </local-cache>
+                <local-cache name="actionTokens"/>
                 <local-cache name="work"/>
-                <local-cache name="realmVersions">
-                    <transaction mode="BATCH" locking="PESSIMISTIC"/>
+                <local-cache name="keys">
+                    <object-memory size="1000"/>
+                    <expiration max-idle="3600000" />
                 </local-cache>
             </cache-container>
             <xsl:apply-templates select="node()|@*"/>

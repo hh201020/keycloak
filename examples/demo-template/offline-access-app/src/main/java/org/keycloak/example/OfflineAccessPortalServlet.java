@@ -17,10 +17,26 @@
 
 package org.keycloak.example;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.keycloak.KeycloakSecurityContext;
+import org.keycloak.adapters.AdapterDeploymentContext;
+import org.keycloak.adapters.KeycloakDeployment;
+import org.keycloak.adapters.RefreshableKeycloakSecurityContext;
+import org.keycloak.adapters.ServerRequest;
+import org.keycloak.adapters.spi.AuthenticationError;
+import org.keycloak.adapters.spi.HttpFacade;
+import org.keycloak.adapters.spi.LogoutError;
+import org.keycloak.common.util.StreamUtil;
+import org.keycloak.common.util.Time;
+import org.keycloak.common.util.UriUtils;
+import org.keycloak.jose.jws.JWSInputException;
+import org.keycloak.representations.AccessTokenResponse;
+import org.keycloak.representations.RefreshToken;
+import org.keycloak.util.JsonSerialization;
+import org.keycloak.util.TokenUtil;
 
 import javax.security.cert.X509Certificate;
 import javax.servlet.ServletException;
@@ -28,26 +44,11 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.DefaultHttpClient;
-import org.keycloak.KeycloakSecurityContext;
-import org.keycloak.adapters.AdapterDeploymentContext;
-import org.keycloak.adapters.spi.AuthenticationError;
-import org.keycloak.adapters.spi.HttpFacade;
-import org.keycloak.adapters.KeycloakDeployment;
-import org.keycloak.adapters.RefreshableKeycloakSecurityContext;
-import org.keycloak.adapters.ServerRequest;
-import org.keycloak.adapters.spi.LogoutError;
-import org.keycloak.jose.jws.JWSInputException;
-import org.keycloak.representations.AccessTokenResponse;
-import org.keycloak.representations.RefreshToken;
-import org.keycloak.util.JsonSerialization;
-import org.keycloak.util.TokenUtil;
-import org.keycloak.common.util.StreamUtil;
-import org.keycloak.common.util.Time;
-import org.keycloak.common.util.UriUtils;
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -172,6 +173,8 @@ public class OfflineAccessPortalServlet extends HttpServlet {
             public Request getRequest() {
                 return new Request() {
 
+                    private InputStream inputStream;
+
                     @Override
                     public String getMethod() {
                         return servletRequest.getMethod();
@@ -180,6 +183,11 @@ public class OfflineAccessPortalServlet extends HttpServlet {
                     @Override
                     public String getURI() {
                         return servletRequest.getRequestURL().toString();
+                    }
+
+                    @Override
+                    public String getRelativePath() {
+                        return servletRequest.getServletPath();
                     }
 
                     @Override
@@ -216,10 +224,27 @@ public class OfflineAccessPortalServlet extends HttpServlet {
 
                     @Override
                     public InputStream getInputStream() {
+                        return getInputStream(false);
+                    }
+
+                    @Override
+                    public InputStream getInputStream(boolean buffered) {
+                        if (inputStream != null) {
+                            return inputStream;
+                        }
+
+                        if (buffered) {
+                            try {
+                                return inputStream = new BufferedInputStream(servletRequest.getInputStream());
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+
                         try {
                             return servletRequest.getInputStream();
-                        } catch (IOException ioe) {
-                            throw new RuntimeException(ioe);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
                         }
                     }
 

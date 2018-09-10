@@ -1,20 +1,22 @@
 package org.keycloak.testsuite.console.clients;
 
-import java.util.List;
 import org.jboss.arquillian.graphene.page.Page;
-import org.junit.Test;
-import org.keycloak.testsuite.console.page.users.UserRoleMappingsForm;
-
-import static org.junit.Assert.*;
 import org.junit.Before;
+import org.junit.Test;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
-import static org.keycloak.testsuite.console.page.clients.CreateClientForm.OidcAccessType.CONFIDENTIAL;
 import org.keycloak.testsuite.console.page.clients.roles.ClientRole;
 import org.keycloak.testsuite.console.page.clients.roles.ClientRoles;
 import org.keycloak.testsuite.console.page.clients.roles.CreateClientRole;
 import org.keycloak.testsuite.console.page.users.User;
+import org.keycloak.testsuite.console.page.users.UserRoleMappingsForm;
 import org.keycloak.testsuite.util.URLAssert;
+
+import java.util.List;
+
+import static org.junit.Assert.*;
+import static org.keycloak.testsuite.auth.page.login.Login.OIDC;
+import static org.keycloak.testsuite.console.clients.AbstractClientTest.createClientRep;
 
 /**
  * Created by fkiss.
@@ -39,7 +41,7 @@ public class ClientRolesTest extends AbstractClientTest {
 
     @Before
     public void beforeClientRolesTest() {
-        ClientRepresentation newClient = createOidcClientRep(CONFIDENTIAL, TEST_CLIENT_ID, TEST_REDIRECT_URIS);
+        ClientRepresentation newClient = createClientRep(TEST_CLIENT_ID, OIDC);
         testRealmResource().clients().create(newClient).close();
         
         id = findClientByClientId(TEST_CLIENT_ID).getId();
@@ -72,7 +74,6 @@ public class ClientRolesTest extends AbstractClientTest {
         RoleRepresentation role = clientRoles.get(0);
         assertEquals(TEST_CLIENT_ROLE_NAME, role.getName());
         assertEquals("description", role.getDescription());
-        assertFalse(role.isScopeParamRequired());
         assertFalse(role.isComposite());
         assertNull(role.getComposites());
         

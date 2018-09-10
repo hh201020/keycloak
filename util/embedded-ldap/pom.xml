@@ -21,7 +21,7 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>1.9.1.Final-SNAPSHOT</version>
+        <version>4.5.0.Final-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -43,6 +43,7 @@
         <dependency>
             <groupId>log4j</groupId>
             <artifactId>log4j</artifactId>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -62,10 +63,6 @@
                     <groupId>org.slf4j</groupId>
                     <artifactId>slf4j-log4j12</artifactId>
                 </exclusion>
-                <exclusion>
-                    <groupId>org.apache.directory.jdbm</groupId>
-                    <artifactId>apacheds-jdbm1</artifactId>
-                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -79,10 +76,6 @@
                 <exclusion>
                     <groupId>org.slf4j</groupId>
                     <artifactId>slf4j-log4j12</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.apache.directory.jdbm</groupId>
-                    <artifactId>apacheds-jdbm1</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>

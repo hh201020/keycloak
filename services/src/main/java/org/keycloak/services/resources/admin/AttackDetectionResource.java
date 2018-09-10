@@ -16,14 +16,18 @@
  */
 package org.keycloak.services.resources.admin;
 
+import org.jboss.logging.Logger;
 import org.jboss.resteasy.annotations.cache.NoCache;
 import org.keycloak.common.ClientConnection;
+import org.keycloak.common.util.Time;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.UsernameLoginFailureModel;
-import org.keycloak.services.ServicesLogger;
+import org.keycloak.models.UserLoginFailureModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.services.managers.BruteForceProtector;
+import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
 
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -33,19 +37,19 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.UriInfo;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Base resource class for the admin REST api of one realm
  *
+ * @resource Attack Detection
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
 public class AttackDetectionResource {
-    protected static final ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
-    protected RealmAuth auth;
+    protected static final Logger logger = Logger.getLogger(AttackDetectionResource.class);
+    protected AdminPermissionEvaluator auth;
     protected RealmModel realm;
     private AdminEventBuilder adminEvent;
 
@@ -53,34 +57,35 @@ public class AttackDetectionResource {
     protected KeycloakSession session;
 
     @Context
-    protected UriInfo uriInfo;
-
-    @Context
     protected ClientConnection connection;
 
     @Context
     protected HttpHeaders headers;
 
-    public AttackDetectionResource(RealmAuth auth, RealmModel realm, AdminEventBuilder adminEvent) {
+    public AttackDetectionResource(AdminPermissionEvaluator auth, RealmModel realm, AdminEventBuilder adminEvent) {
         this.auth = auth;
         this.realm = realm;
-        this.adminEvent = adminEvent.realm(realm);
-
-        auth.init(RealmAuth.Resource.USER);
+        this.adminEvent = adminEvent.realm(realm).resource(ResourceType.USER_LOGIN_FAILURE);
     }
 
     /**
      * Get status of a username in brute force detection
      *
-     * @param username
+     * @param userId
      * @return
      */
     @GET
-    @Path("brute-force/usernames/{username}")
+    @Path("brute-force/users/{userId}")
     @NoCache
     @Produces(MediaType.APPLICATION_JSON)
-    public Map<String, Object> bruteForceUserStatus(@PathParam("username") String username) {
-        auth.hasView();
+    public Map<String, Object> bruteForceUserStatus(@PathParam("userId") String userId) {
+        UserModel user = session.users().getUserById(userId, realm);
+        if (user == null) {
+            auth.users().requireView();
+        } else {
+            auth.users().requireView(user);
+        }
+
         Map<String, Object> data = new HashMap<>();
         data.put("disabled", false);
         data.put("numFailures", 0);
@@ -88,11 +93,20 @@ public class AttackDetectionResource {
         data.put("lastIPFailure", "n/a");
         if (!realm.isBruteForceProtected()) return data;
 
-        UsernameLoginFailureModel model = session.sessions().getUserLoginFailure(realm, username.toLowerCase());
+
+        UserLoginFailureModel model = session.sessions().getUserLoginFailure(realm, userId);
         if (model == null) return data;
-        if (session.getProvider(BruteForceProtector.class).isTemporarilyDisabled(session, realm, username)) {
+
+        boolean disabled;
+        if (user == null) {
+            disabled = Time.currentTime() < model.getFailedLoginNotBefore();
+        } else {
+            disabled = session.getProvider(BruteForceProtector.class).isTemporarilyDisabled(session, realm, user);
+        }
+        if (disabled) {
             data.put("disabled", true);
         }
+
         data.put("numFailures", model.getNumFailures());
         data.put("lastFailure", model.getLastFailure());
         data.put("lastIPFailure", model.getLastIPFailure());
@@ -104,16 +118,21 @@ public class AttackDetectionResource {
      *
      * This can release temporary disabled user
      *
-     * @param username
+     * @param userId
      */
-    @Path("brute-force/usernames/{username}")
+    @Path("brute-force/users/{userId}")
     @DELETE
-    public void clearBruteForceForUser(@PathParam("username") String username) {
-        auth.requireManage();
-        UsernameLoginFailureModel model = session.sessions().getUserLoginFailure(realm, username.toLowerCase());
+    public void clearBruteForceForUser(@PathParam("userId") String userId) {
+        UserModel user = session.users().getUserById(userId, realm);
+        if (user == null) {
+            auth.users().requireManage();
+        } else {
+            auth.users().requireManage(user);
+        }
+        UserLoginFailureModel model = session.sessions().getUserLoginFailure(realm, userId);
         if (model != null) {
-            session.sessions().removeUserLoginFailure(realm, username);
-            adminEvent.operation(OperationType.DELETE).success();
+            session.sessions().removeUserLoginFailure(realm, userId);
+            adminEvent.operation(OperationType.DELETE).resourcePath(session.getContext().getUri()).success();
         }
     }
 
@@ -123,12 +142,13 @@ public class AttackDetectionResource {
      * This can release temporary disabled users
      *
      */
-    @Path("brute-force/usernames")
+    @Path("brute-force/users")
     @DELETE
     public void clearAllBruteForce() {
-        auth.requireManage();
+        auth.users().requireManage();
+
         session.sessions().removeAllUserLoginFailures(realm);
-        adminEvent.operation(OperationType.DELETE).success();
+        adminEvent.operation(OperationType.DELETE).resourcePath(session.getContext().getUri()).success();
     }
 
 

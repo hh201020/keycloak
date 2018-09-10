@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Red Hat, Inc. and/or its affiliates
+ * Copyright 2018 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,24 +18,14 @@
 package org.keycloak.testsuite.auth.page.login;
 
 import javax.ws.rs.core.UriBuilder;
-import org.jboss.arquillian.graphene.page.Page;
 
 /**
  *
  * @author tkyjovsk
  */
 public abstract class Authenticate extends LoginActions {
-
     @Override
     public UriBuilder createUriBuilder() {
         return super.createUriBuilder().path("authenticate");
     }
-
-    @Page
-    private LoginForm login;
-
-    public LoginForm loginForm() {
-        return login;
-    }
-
 }

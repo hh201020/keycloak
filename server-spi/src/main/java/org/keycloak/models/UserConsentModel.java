@@ -26,8 +26,9 @@ import java.util.Set;
 public class UserConsentModel {
 
     private final ClientModel client;
-    private Set<ProtocolMapperModel> protocolMappers = new HashSet<ProtocolMapperModel>();
-    private Set<RoleModel> roles = new HashSet<RoleModel>();
+    private Set<ClientScopeModel> clientScopes = new HashSet<>();
+    private Long createdDate;
+    private Long lastUpdatedDate;
 
     public UserConsentModel(ClientModel client) {
         this.client = client;
@@ -37,34 +38,35 @@ public class UserConsentModel {
         return client;
     }
 
-    public void addGrantedRole(RoleModel role) {
-        roles.add(role);
+    public void addGrantedClientScope(ClientScopeModel clientScope) {
+        clientScopes.add(clientScope);
     }
 
-    public Set<RoleModel> getGrantedRoles() {
-        return roles;
+    public Set<ClientScopeModel> getGrantedClientScopes() {
+        return clientScopes;
     }
 
-    public boolean isRoleGranted(RoleModel role) {
-        for (RoleModel currentRole : roles) {
-            if (currentRole.getId().equals(role.getId())) return true;
+    public boolean isClientScopeGranted(ClientScopeModel clientScope) {
+        // TODO: May need to be changed with adding support for client scopes inheritance
+        for (ClientScopeModel apprClientScope : clientScopes) {
+            if (apprClientScope.getId().equals(clientScope.getId())) return true;
         }
         return false;
     }
 
-    public void addGrantedProtocolMapper(ProtocolMapperModel protocolMapper) {
-        protocolMappers.add(protocolMapper);
+    public Long getCreatedDate() {
+        return createdDate;
     }
 
-    public Set<ProtocolMapperModel> getGrantedProtocolMappers() {
-        return protocolMappers;
+    public void setCreatedDate(Long createdDate) {
+        this.createdDate = createdDate;
     }
 
-    public boolean isProtocolMapperGranted(ProtocolMapperModel protocolMapper) {
-        for (ProtocolMapperModel currentProtMapper : protocolMappers) {
-            if (currentProtMapper.getId().equals(protocolMapper.getId())) return true;
-        }
-        return false;
+    public Long getLastUpdatedDate() {
+        return lastUpdatedDate;
     }
 
+    public void setLastUpdatedDate(Long lastUpdatedDate) {
+        this.lastUpdatedDate = lastUpdatedDate;
+    }
 }

@@ -1,5 +1,6 @@
 package org.keycloak.testsuite.console.page.authentication;
 
+import org.keycloak.testsuite.util.WaitUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
@@ -28,9 +29,11 @@ public class RequiredActions extends Authentication {
     }
 
     private void setRequiredActionValue(String id, boolean value) {
+        WaitUtils.waitUntilElement(requiredActionTable).is().present();
+
         WebElement checkbox = requiredActionTable.findElement(By.id(id));
 
-        if (checkbox.isSelected() != value) {
+        if (checkbox.isEnabled() && checkbox.isSelected() != value) {
             checkbox.click();
         }
     }
@@ -81,5 +84,61 @@ public class RequiredActions extends Authentication {
 
     public void setUpdateProfileDefaultAction(boolean value) {
         setRequiredActionDefaultValue(UPDATE_PROFILE, value);
+    }
+
+    private boolean getRequiredActionValue(String id) {
+        WaitUtils.waitUntilElement(requiredActionTable).is().present();
+
+        WebElement checkbox = requiredActionTable.findElement(By.id(id));
+
+        return checkbox.isSelected();
+    }
+
+    private boolean getRequiredActionEnabledValue(String id) {
+        return getRequiredActionValue(id + ENABLED);
+    }
+
+    private boolean getRequiredActionDefaultValue(String id) {
+        return getRequiredActionValue(id + DEFAULT);
+    }
+
+    public boolean getTermsAndConditionEnabled() {
+        return getRequiredActionEnabledValue(TERMS_AND_CONDITIONS);
+    }
+
+    public boolean getTermsAndConditionDefaultAction() {
+        return getRequiredActionDefaultValue(TERMS_AND_CONDITIONS);
+    }
+
+    public boolean getVerifyEmailEnabled() {
+        return getRequiredActionEnabledValue(VERIFY_EMAIL);
+    }
+
+    public boolean getVerifyEmailDefaultAction() {
+        return getRequiredActionDefaultValue(VERIFY_EMAIL);
+    }
+
+    public boolean getUpdatePasswordEnabled() {
+        return getRequiredActionEnabledValue(UPDATE_PASSWORD);
+    }
+
+    public boolean getUpdatePasswordDefaultAction() {
+        return getRequiredActionDefaultValue(UPDATE_PASSWORD);
+    }
+
+    public boolean getConfigureTotpEnabled() {
+        return getRequiredActionEnabledValue(CONFIGURE_TOTP);
+    }
+
+    public boolean getConfigureTotpDefaultAction() {
+        return getRequiredActionDefaultValue(CONFIGURE_TOTP);
+    }
+
+    public boolean getUpdateProfileEnabled() {
+        return getRequiredActionEnabledValue(UPDATE_PROFILE);
+    }
+
+    public boolean getUpdateProfileDefaultAction() {
+        return getRequiredActionDefaultValue(UPDATE_PROFILE);
     }
 }

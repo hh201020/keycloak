@@ -17,31 +17,38 @@
 
 package org.keycloak.models.jpa;
 
-import org.keycloak.connections.jpa.util.JpaUtils;
 import org.keycloak.models.ClientModel;
-import org.keycloak.models.ClientTemplateModel;
+import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ModelDuplicateException;
+import org.keycloak.models.ModelException;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleContainerModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.jpa.entities.ClientEntity;
-import org.keycloak.models.jpa.entities.ClientTemplateEntity;
+import org.keycloak.models.jpa.entities.ClientScopeClientMappingEntity;
+import org.keycloak.models.jpa.entities.ClientScopeEntity;
+import org.keycloak.models.jpa.entities.ClientScopeRoleMappingEntity;
 import org.keycloak.models.jpa.entities.ProtocolMapperEntity;
 import org.keycloak.models.jpa.entities.RoleEntity;
-import org.keycloak.models.jpa.entities.ScopeMappingEntity;
 import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.protocol.oidc.OIDCLoginProtocol;
+import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
 
 import javax.persistence.EntityManager;
 import javax.persistence.TypedQuery;
+
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -209,7 +216,7 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
 
     @Override
     public boolean validateSecret(String secret) {
-        return secret.equals(entity.getSecret());
+        return MessageDigest.isEqual(secret.getBytes(), entity.getSecret().getBytes());
     }
 
     @Override
@@ -223,7 +230,7 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
     }
 
     @Override
-         public Set<RoleModel> getRealmScopeMappings() {
+    public Set<RoleModel> getRealmScopeMappings() {
         Set<RoleModel> roleMappings = getScopeMappings();
 
         Set<RoleModel> appRoles = new HashSet<>();
@@ -241,47 +248,22 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
 
     @Override
     public Set<RoleModel> getScopeMappings() {
-        TypedQuery<String> query = em.createNamedQuery("clientScopeMappingIds", String.class);
-        query.setParameter("client", getEntity());
-        List<String> ids = query.getResultList();
-        Set<RoleModel> roles = new HashSet<RoleModel>();
-        for (String roleId : ids) {
-            RoleModel role = realm.getRoleById(roleId);
-            if (role == null) continue;
-            roles.add(role);
-        }
-        return roles;
+        return getEntity().getScopeMapping().stream()
+                .map(RoleEntity::getId)
+                .map(realm::getRoleById)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
     }
 
     @Override
     public void addScopeMapping(RoleModel role) {
-        Set<RoleModel> roles = getScopeMappings();
-        if (roles.contains(role)) return;
-        ScopeMappingEntity entity = new ScopeMappingEntity();
-        entity.setClient(getEntity());
         RoleEntity roleEntity = RoleAdapter.toRoleEntity(role, em);
-        entity.setRole(roleEntity);
-        em.persist(entity);
-        em.flush();
-        em.detach(entity);
+        getEntity().getScopeMapping().add(roleEntity);
     }
 
     @Override
     public void deleteScopeMapping(RoleModel role) {
-        TypedQuery<ScopeMappingEntity> query = getRealmScopeMappingQuery(role);
-        List<ScopeMappingEntity> results = query.getResultList();
-        if (results.size() == 0) return;
-        for (ScopeMappingEntity entity : results) {
-            em.remove(entity);
-        }
-    }
-
-    protected TypedQuery<ScopeMappingEntity> getRealmScopeMappingQuery(RoleModel role) {
-        TypedQuery<ScopeMappingEntity> query = em.createNamedQuery("hasScope", ScopeMappingEntity.class);
-        query.setParameter("client", getEntity());
-        RoleEntity roleEntity = RoleAdapter.toRoleEntity(role, em);
-        query.setParameter("role", roleEntity);
-        return query;
+        getEntity().getScopeMapping().remove(RoleAdapter.toRoleEntity(role, em));
     }
 
     @Override
@@ -293,6 +275,29 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
     public void setProtocol(String protocol) {
         entity.setProtocol(protocol);
 
+    }
+
+    @Override
+    public void setAuthenticationFlowBindingOverride(String name, String value) {
+        entity.getAuthFlowBindings().put(name, value);
+
+    }
+
+    @Override
+    public void removeAuthenticationFlowBindingOverride(String name) {
+        entity.getAuthFlowBindings().remove(name);
+    }
+
+    @Override
+    public String getAuthenticationFlowBindingOverride(String name) {
+        return entity.getAuthFlowBindings().get(name);
+    }
+
+    @Override
+    public Map<String, String> getAuthenticationFlowBindingOverrides() {
+        Map<String, String> copy = new HashMap<>();
+        copy.putAll(entity.getAuthFlowBindings());
+        return copy;
     }
 
     @Override
@@ -319,56 +324,48 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
     }
 
     @Override
-    public ClientTemplateModel getClientTemplate() {
-        ClientTemplateEntity templateEntity = entity.getClientTemplate();
-        if (templateEntity == null) return null;
-        return session.realms().getClientTemplateById(templateEntity.getId(), realm);
+    public void addClientScope(ClientScopeModel clientScope, boolean defaultScope) {
+        if (getClientScopes(defaultScope, false).containsKey(clientScope.getName())) return;
+
+        ClientScopeClientMappingEntity entity = new ClientScopeClientMappingEntity();
+        entity.setClientScope(ClientScopeAdapter.toClientScopeEntity(clientScope, em));
+        entity.setClient(getEntity());
+        entity.setDefaultScope(defaultScope);
+        em.persist(entity);
+        em.flush();
+        em.detach(entity);
     }
 
     @Override
-    public void setClientTemplate(ClientTemplateModel template) {
-        if (template == null) {
-            entity.setClientTemplate(null);
+    public void removeClientScope(ClientScopeModel clientScope) {
+        int numRemoved = em.createNamedQuery("deleteClientScopeClientMapping")
+                .setParameter("clientScope", ClientScopeAdapter.toClientScopeEntity(clientScope, em))
+                .setParameter("client", getEntity())
+                .executeUpdate();
+        em.flush();
+    }
 
-        } else {
-            ClientTemplateEntity templateEntity = em.getReference(ClientTemplateEntity.class, template.getId());
-            entity.setClientTemplate(templateEntity);
+    @Override
+    public Map<String, ClientScopeModel> getClientScopes(boolean defaultScope, boolean filterByProtocol) {
+        TypedQuery<String> query = em.createNamedQuery("clientScopeClientMappingIdsByClient", String.class);
+        query.setParameter("client", getEntity());
+        query.setParameter("defaultScope", defaultScope);
+        List<String> ids = query.getResultList();
+
+        // Defaults to openid-connect
+        String clientProtocol = getProtocol() == null ? OIDCLoginProtocol.LOGIN_PROTOCOL : getProtocol();
+
+        Map<String, ClientScopeModel> clientScopes = new HashMap<>();
+        for (String clientScopeId : ids) {
+            ClientScopeModel clientScope = realm.getClientScopeById(clientScopeId);
+            if (clientScope == null) continue;
+            if (!filterByProtocol || clientScope.getProtocol().equals(clientProtocol)) {
+                clientScopes.put(clientScope.getName(), clientScope);
+            }
         }
-
+        return clientScopes;
     }
 
-    @Override
-    public boolean useTemplateScope() {
-        return entity.isUseTemplateScope();
-    }
-
-    @Override
-    public void setUseTemplateScope(boolean flag) {
-        entity.setUseTemplateScope(flag);
-
-    }
-
-    @Override
-    public boolean useTemplateMappers() {
-        return entity.isUseTemplateMappers();
-    }
-
-    @Override
-    public void setUseTemplateMappers(boolean flag) {
-        entity.setUseTemplateMappers(flag);
-
-    }
-
-    @Override
-    public boolean useTemplateConfig() {
-        return entity.isUseTemplateConfig();
-    }
-
-    @Override
-    public void setUseTemplateConfig(boolean flag) {
-        entity.setUseTemplateConfig(flag);
-
-    }
 
     public static boolean contains(String str, String[] array) {
         for (String s : array) {
@@ -386,8 +383,6 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
             mapping.setName(entity.getName());
             mapping.setProtocol(entity.getProtocol());
             mapping.setProtocolMapper(entity.getProtocolMapper());
-            mapping.setConsentRequired(entity.isConsentRequired());
-            mapping.setConsentText(entity.getConsentText());
             Map<String, String> config = new HashMap<String, String>();
             if (entity.getConfig() != null) {
                 config.putAll(entity.getConfig());
@@ -411,8 +406,6 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
         entity.setProtocolMapper(model.getProtocolMapper());
         entity.setClient(this.entity);
         entity.setConfig(model.getConfig());
-        entity.setConsentRequired(model.isConsentRequired());
-        entity.setConsentText(model.getConsentText());
 
         em.persist(entity);
         this.entity.getProtocolMappers().add(entity);
@@ -455,8 +448,6 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
     public void updateProtocolMapper(ProtocolMapperModel mapping) {
         ProtocolMapperEntity entity = getProtocolMapperEntity(mapping.getId());
         entity.setProtocolMapper(mapping.getProtocolMapper());
-        entity.setConsentRequired(mapping.isConsentRequired());
-        entity.setConsentText(mapping.getConsentText());
         if (entity.getConfig() == null) {
             entity.setConfig(mapping.getConfig());
         } else {
@@ -487,8 +478,6 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
         mapping.setName(entity.getName());
         mapping.setProtocol(entity.getProtocol());
         mapping.setProtocolMapper(entity.getProtocolMapper());
-        mapping.setConsentRequired(entity.isConsentRequired());
-        mapping.setConsentText(entity.getConsentText());
         Map<String, String> config = new HashMap<String, String>();
         if (entity.getConfig() != null) config.putAll(entity.getConfig());
         mapping.setConfig(config);
@@ -498,6 +487,18 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
     @Override
     public void updateClient() {
         em.flush();
+        session.getKeycloakSessionFactory().publish(new RealmModel.ClientUpdatedEvent() {
+
+            @Override
+            public ClientModel getUpdatedClient() {
+                return ClientAdapter.this;
+            }
+
+            @Override
+            public KeycloakSession getKeycloakSession() {
+                return session;
+            }
+        });
     }
 
     @Override
@@ -627,26 +628,7 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
 
     @Override
     public boolean removeRole(RoleModel roleModel) {
-        if (roleModel == null) {
-            return false;
-        }
-        if (!roleModel.getContainer().equals(this)) return false;
-
-        session.users().preRemove(getRealm(), roleModel);
-        RoleEntity role = RoleAdapter.toRoleEntity(roleModel, em);
-        if (!role.isClientRole()) return false;
-
-        entity.getDefaultRoles().remove(role);
-        String compositeRoleTable = JpaUtils.getTableNameForNativeQuery("COMPOSITE_ROLE", em);
-        em.createNativeQuery("delete from " + compositeRoleTable + " where CHILD_ROLE = :role").setParameter("role", role).executeUpdate();
-        em.createNamedQuery("deleteScopeMappingByRole").setParameter("role", role).executeUpdate();
-        em.createNamedQuery("deleteTemplateScopeMappingByRole").setParameter("role", role).executeUpdate();
-        role.setClient(null);
-        em.flush();
-        em.remove(role);
-        em.flush();
-
-        return true;
+        return session.realms().removeRole(realm, roleModel);
     }
 
     @Override
@@ -697,7 +679,6 @@ public class ClientAdapter implements ClientModel, JpaModel<ClientEntity> {
         }
         RoleEntity roleEntity = RoleAdapter.toRoleEntity(role, em);
         entities.add(roleEntity);
-        em.flush();
     }
 
     @Override

@@ -19,9 +19,12 @@ package org.keycloak.services;
 
 import org.jboss.resteasy.spi.ResteasyProviderFactory;
 import org.keycloak.common.ClientConnection;
-import org.keycloak.models.*;
-import org.keycloak.models.utils.RealmImporter;
-import org.keycloak.services.managers.RealmManager;
+import org.keycloak.models.ClientModel;
+import org.keycloak.models.KeycloakContext;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakUriInfo;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.services.resources.KeycloakApplication;
 import org.keycloak.services.util.LocaleHelper;
 
@@ -43,6 +46,8 @@ public class DefaultKeycloakContext implements KeycloakContext {
 
     private KeycloakSession session;
 
+    private KeycloakUriInfo uriInfo;
+
     public DefaultKeycloakContext(KeycloakSession session) {
         this.session = session;
     }
@@ -57,12 +62,16 @@ public class DefaultKeycloakContext implements KeycloakContext {
     @Override
     public String getContextPath() {
         KeycloakApplication app = getContextObject(KeycloakApplication.class);
+        if (app == null) return null;
         return app.getContextPath();
     }
 
     @Override
-    public UriInfo getUri() {
-        return getContextObject(UriInfo.class);
+    public KeycloakUriInfo getUri() {
+        if (uriInfo == null) {
+            uriInfo = new KeycloakUriInfo(session, getContextObject(UriInfo.class));
+        }
+        return uriInfo;
     }
 
     @Override
@@ -83,6 +92,7 @@ public class DefaultKeycloakContext implements KeycloakContext {
     @Override
     public void setRealm(RealmModel realm) {
         this.realm = realm;
+        this.uriInfo = null;
     }
 
     @Override
@@ -103,13 +113,6 @@ public class DefaultKeycloakContext implements KeycloakContext {
     @Override
     public void setConnection(ClientConnection connection) {
         this.connection = connection;
-    }
-
-    @Override
-    public RealmImporter getRealmManager() {
-        RealmManager manager = new RealmManager(session);
-        manager.setContextPath(getContextPath());
-        return manager;
     }
 
     @Override

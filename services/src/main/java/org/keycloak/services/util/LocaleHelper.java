@@ -16,6 +16,8 @@
  */
 package org.keycloak.services.util;
 
+import org.keycloak.OAuth2Constants;
+import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -32,7 +34,6 @@ import java.util.Set;
 public class LocaleHelper {
 
     private static final String LOCALE_COOKIE = "KEYCLOAK_LOCALE";
-    private static final String UI_LOCALES_PARAM = "ui_locales";
     private static final String KC_LOCALE_PARAM = "kc_locale";
 
     public static Locale getLocale(KeycloakSession session, RealmModel realm, UserModel user) {
@@ -41,6 +42,25 @@ public class LocaleHelper {
         } else {
             Locale locale = getUserLocale(session, realm, user);
             return locale != null ? locale : Locale.forLanguageTag(realm.getDefaultLocale());
+        }
+    }
+
+    public static Locale getLocaleFromCookie(KeycloakSession session) {
+        KeycloakContext ctx = session.getContext();
+
+        if (ctx.getRequestHeaders() != null && ctx.getRequestHeaders().getCookies().containsKey(LOCALE_COOKIE)) {
+            String localeString = ctx.getRequestHeaders().getCookies().get(LOCALE_COOKIE).getValue();
+            Locale locale = findLocale(ctx.getRealm().getSupportedLocales(), localeString);
+            if (locale != null) {
+                return locale;
+            }
+        }
+
+        String locale = ctx.getRealm().getDefaultLocale();
+        if (locale != null) {
+            return Locale.forLanguageTag(locale);
+        } else {
+            return Locale.ENGLISH;
         }
     }
 
@@ -84,8 +104,8 @@ public class LocaleHelper {
         }
 
         // ui_locales query parameter
-        if (uriInfo != null && uriInfo.getQueryParameters().containsKey(UI_LOCALES_PARAM)) {
-            String localeString = uriInfo.getQueryParameters().getFirst(UI_LOCALES_PARAM);
+        if (uriInfo != null && uriInfo.getQueryParameters().containsKey(OAuth2Constants.UI_LOCALES_PARAM)) {
+            String localeString = uriInfo.getQueryParameters().getFirst(OAuth2Constants.UI_LOCALES_PARAM);
             Locale locale = findLocale(realm.getSupportedLocales(), localeString.split(" "));
             if (locale != null) {
                 return locale;
@@ -114,25 +134,7 @@ public class LocaleHelper {
     }
 
     private static Locale findLocale(Set<String> supportedLocales, String... localeStrings) {
-        for (String localeString : localeStrings) {
-            Locale result = null;
-            Locale search = Locale.forLanguageTag(localeString);
-            for (String languageTag : supportedLocales) {
-                Locale locale = Locale.forLanguageTag(languageTag);
-                if (locale.getLanguage().equals(search.getLanguage())) {
-                    if (locale.getCountry().equals("") && result == null) {
-                        result = locale;
-                    }
-                    if (locale.getCountry().equals(search.getCountry())) {
-                        return locale;
-                    }
-                }
-            }
-            if (result != null) {
-                return result;
-            }
-        }
-        return null;
+        return new LocaleNegotiator(supportedLocales).invoke(localeStrings);
     }
 
     private static void updateUsersLocale(UserModel user, String locale) {

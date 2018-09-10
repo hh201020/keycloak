@@ -17,20 +17,15 @@
 package org.keycloak.testsuite.auth.page.login;
 
 import org.jboss.arquillian.graphene.page.Page;
-import org.keycloak.testsuite.auth.page.AuthRealm;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.support.FindBy;
 
 import javax.ws.rs.core.UriBuilder;
-
-import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
 
 /**
  *
  * @author Petr Mensik
  * @author tkyjovsk
  */
-public abstract class Login extends AuthRealm {
+public abstract class Login extends LoginBase {
 
     public static final String PROTOCOL = "protocol";
     public static final String OIDC = "openid-connect";
@@ -56,17 +51,6 @@ public abstract class Login extends AuthRealm {
 
     public LoginForm form() {
         return form;
-    }
-
-    @FindBy(css = "link[href*='login/keycloak/css/login.css']")
-    private WebElement keycloakTheme;
-
-    public void waitForKeycloakThemeNotPresent() {
-        waitUntilElement(keycloakTheme).is().not().present();
-    }
-
-    public void waitForKeycloakThemePresent() {
-        waitUntilElement(keycloakTheme).is().present();
     }
 
 }

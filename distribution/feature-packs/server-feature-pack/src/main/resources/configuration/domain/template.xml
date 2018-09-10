@@ -17,7 +17,7 @@
   ~ limitations under the License.
   -->
 
-<domain xmlns="urn:jboss:domain:4.0">
+<domain xmlns="urn:jboss:domain:7.0">
 
     <extensions>
         <?EXTENSIONS?>
@@ -41,12 +41,26 @@
     </management>
 
     <profiles>
-       <profile name="default">
-           <?SUBSYSTEMS socket-binding-group="standard-sockets"?>
-       </profile>
-       <profile name="ha">
-           <?SUBSYSTEMS socket-binding-group="ha-sockets"?>
-       </profile>
+        <!-- Non clustered authentication server profile -->
+        <profile name="auth-server-standalone">
+            <?SUBSYSTEMS socket-binding-group="standard-sockets"?>
+        </profile>
+        <!--
+           Clustering authentication server setup.
+
+           You must configure a remote shared external database like PostgreSQL or MySql if you want this to be
+           able to work on multiple machines.
+        -->
+        <profile name="auth-server-clustered">
+            <?SUBSYSTEMS socket-binding-group="ha-sockets"?>
+        </profile>
+        <!--
+           This is a profile for the built-in Underto Loadbalancer
+           It should be removed in production systems and replaced with a better software or hardware based one
+         -->
+        <profile name="load-balancer">
+            <?SUBSYSTEMS socket-binding-group="load-balancer-sockets"?>
+        </profile>
     </profiles>
 
     <!--
@@ -64,27 +78,32 @@
 
     <socket-binding-groups>
         <socket-binding-group name="standard-sockets" default-interface="public">
-            <!-- Needed for server groups using the 'default' profile  -->
             <?SOCKET-BINDINGS?>
         </socket-binding-group>
         <socket-binding-group name="ha-sockets" default-interface="public">
-            <!-- Needed for server groups using the 'ha' profile  -->
+            <?SOCKET-BINDINGS?>
+        </socket-binding-group>
+        <!-- load-balancer-sockets should be removed in production systems and replaced with a better softare or hardare based one -->
+        <socket-binding-group name="load-balancer-sockets" default-interface="public">
+            <!-- Needed for server groups using the 'load-balancer' profile  -->
             <?SOCKET-BINDINGS?>
         </socket-binding-group>
     </socket-binding-groups>
 
     <server-groups>
-        <server-group name="main-server-group" profile="default">
-            <jvm name="default">
-                <heap size="64m" max-size="512m"/>
-            </jvm>
-            <socket-binding-group ref="standard-sockets"/>
-        </server-group>
-        <server-group name="other-server-group" profile="ha">
+        <server-group name="auth-server-group" profile="auth-server-clustered">
             <jvm name="default">
                 <heap size="64m" max-size="512m"/>
             </jvm>
             <socket-binding-group ref="ha-sockets"/>
+        </server-group>
+
+        <!-- load-balancer-group should be removed in production systems and replaced with a better softare or hardare based one -->
+        <server-group name="load-balancer-group" profile="load-balancer">
+            <jvm name="default">
+                <heap size="64m" max-size="512m"/>
+            </jvm>
+            <socket-binding-group ref="load-balancer-sockets"/>
         </server-group>
     </server-groups>
 

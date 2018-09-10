@@ -25,6 +25,8 @@ import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -43,6 +45,8 @@ public class OTPPolicy implements Serializable {
     protected int period;
 
     private static final Map<String, String> algToKeyUriAlg = new HashMap<>();
+
+    private static final OtpApp[] allApplications = new OtpApp[] { new FreeOTP(), new GoogleAuthenticator() };
 
     static {
         algToKeyUriAlg.put(HmacOTP.HMAC_SHA1, "SHA1");
@@ -63,6 +67,10 @@ public class OTPPolicy implements Serializable {
     }
 
     public static OTPPolicy DEFAULT_POLICY = new OTPPolicy(UserCredentialModel.TOTP, HmacOTP.HMAC_SHA1, 0, 6, 1, 30);
+
+    public String getAlgorithmKey() {
+        return algToKeyUriAlg.containsKey(algorithm) ? algToKeyUriAlg.get(algorithm) : algorithm;
+    }
 
     public String getType() {
         return type;
@@ -112,26 +120,99 @@ public class OTPPolicy implements Serializable {
         this.period = period;
     }
 
+    /**
+     * Constructs the <code>otpauth://</code> URI based on the <a href="https://github.com/google/google-authenticator/wiki/Key-Uri-Format">Key-Uri-Format</a>.
+     * @param realm
+     * @param user
+     * @param secret
+     * @return the <code>otpauth://</code> URI
+     */
     public String getKeyURI(RealmModel realm, UserModel user, String secret) {
+
         try {
+
             String displayName = realm.getDisplayName() != null && !realm.getDisplayName().isEmpty() ? realm.getDisplayName() : realm.getName();
-            String uri;
 
-            uri = "otpauth://" + type + "/" + URLEncoder.encode(user.getUsername(), "UTF-8") + "?secret=" +
-                    Base32.encode(secret.getBytes()) + "&digits=" + digits + "&algorithm=" + algToKeyUriAlg.get(algorithm);
+            String accountName = URLEncoder.encode(user.getUsername(), "UTF-8");
+            String issuerName = URLEncoder.encode(displayName, "UTF-8") .replaceAll("\\+", "%20");
 
-            uri += "&issuer=" + URLEncoder.encode(displayName, "UTF-8");
+            /*
+             * The issuerName component in the label is usually shown in a authenticator app, such as
+             * Google Authenticator or FreeOTP, as a hint for the user to which system an username
+             * belongs to.
+             */
+            String label = issuerName + ":" + accountName;
+
+            String parameters = "secret=" + Base32.encode(secret.getBytes()) //
+                                + "&digits=" + digits //
+                                + "&algorithm=" + algToKeyUriAlg.get(algorithm) //
+                                + "&issuer=" + issuerName;
 
             if (type.equals(UserCredentialModel.HOTP)) {
-                uri += "&counter=" + initialCounter;
-            }
-            if (type.equals(UserCredentialModel.TOTP)) {
-                uri += "&period=" + period;
+                parameters += "&counter=" + initialCounter;
+            } else if (type.equals(UserCredentialModel.TOTP)) {
+                parameters += "&period=" + period;
             }
 
-            return uri;
+            return "otpauth://" + type + "/" + label+ "?" + parameters;
         } catch (UnsupportedEncodingException e) {
             throw new RuntimeException(e);
         }
     }
+
+    public List<String> getSupportedApplications() {
+        List<String> applications = new LinkedList<>();
+        for (OtpApp a : allApplications) {
+            if (a.supports(this)) {
+                applications.add(a.getName());
+            }
+        }
+        return applications;
+    }
+
+    public interface OtpApp {
+
+        String getName();
+
+        boolean supports(OTPPolicy policy);
+    }
+
+    public static class GoogleAuthenticator implements OtpApp {
+
+        @Override
+        public String getName() {
+            return "Google Authenticator";
+        }
+
+        @Override
+        public boolean supports(OTPPolicy policy) {
+            if (policy.digits != 6) {
+                return false;
+            }
+
+            if (!policy.getAlgorithm().equals("HmacSHA1")) {
+                return false;
+            }
+
+            if (policy.getType().equals("totp") && policy.getPeriod() != 30) {
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    public static class FreeOTP implements OtpApp {
+
+        @Override
+        public String getName() {
+            return "FreeOTP";
+        }
+
+        @Override
+        public boolean supports(OTPPolicy policy) {
+            return true;
+        }
+    }
+
 }

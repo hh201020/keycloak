@@ -18,12 +18,13 @@
 package org.keycloak.testsuite.page;
 
 import org.jboss.arquillian.drone.api.annotation.Drone;
-import static org.jboss.arquillian.graphene.Graphene.guardAjax;
 import org.jboss.logging.Logger;
-import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
+
+import static org.jboss.arquillian.graphene.Graphene.guardAjax;
+import static org.keycloak.testsuite.util.UIUtils.clickLink;
 
 /**
  *
@@ -44,31 +45,18 @@ public class Form {
     private WebElement cancel;
 
     public void save() {
-//        guardAjax(save).click();
-        save.click();
+        clickLink(save);
     }
 
     public void cancel() {
         guardAjax(cancel).click();
     }
 
-    public static String getInputValue(WebElement input) {
-        waitUntilElement(input).is().present();
-        return input.getAttribute(VALUE);
+    public WebElement saveBtn() {
+        return save;
     }
 
-    public static final String VALUE = "value";
-
-    public static void setInputValue(WebElement input, String value) {
-        waitUntilElement(input).is().present();
-        if (input.isEnabled()) {
-            input.clear();
-            if (value != null) {
-                input.sendKeys(value);
-            }
-        } else {
-            // TODO log warning
-        }
+    public WebElement cancelBtn() {
+        return cancel;
     }
-
 }

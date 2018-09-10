@@ -26,6 +26,8 @@ import org.keycloak.common.util.UriUtils;
 
 import javax.security.cert.X509Certificate;
 import javax.servlet.http.HttpServletResponse;
+
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -69,6 +71,9 @@ public class CatalinaHttpFacade implements HttpFacade {
     }
 
     protected class RequestFacade implements Request {
+
+        private InputStream inputStream;
+
         @Override
         public String getURI() {
             StringBuffer buf = request.getRequestURL();
@@ -76,6 +81,19 @@ public class CatalinaHttpFacade implements HttpFacade {
                 buf.append('?').append(request.getQueryString());
             }
             return buf.toString();
+        }
+
+        @Override
+        public String getRelativePath() {
+            String uri = request.getRequestURI();
+            String contextPath = request.getContextPath();
+            String servletPath = uri.substring(uri.indexOf(contextPath) + contextPath.length());
+
+            if ("".equals(servletPath)) {
+                servletPath = "/";
+            }
+
+            return servletPath;
         }
 
         @Override
@@ -123,6 +141,23 @@ public class CatalinaHttpFacade implements HttpFacade {
 
         @Override
         public InputStream getInputStream() {
+            return getInputStream(false);
+        }
+
+        @Override
+        public InputStream getInputStream(boolean buffered) {
+            if (inputStream != null) {
+                return inputStream;
+            }
+
+            if (buffered) {
+                try {
+                    return inputStream = new BufferedInputStream(request.getInputStream());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
             try {
                 return request.getInputStream();
             } catch (IOException e) {

@@ -17,18 +17,6 @@
 
 package org.keycloak.util.ldap;
 
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Locale;
-import java.util.Properties;
-import java.util.Set;
-
-import javax.security.auth.kerberos.KerberosPrincipal;
-
 import org.apache.directory.api.ldap.model.constants.SupportedSaslMechanisms;
 import org.apache.directory.api.ldap.model.exception.LdapInvalidDnException;
 import org.apache.directory.server.core.api.DirectoryService;
@@ -48,6 +36,17 @@ import org.apache.directory.shared.kerberos.KerberosUtils;
 import org.apache.directory.shared.kerberos.codec.types.EncryptionType;
 import org.jboss.logging.Logger;
 
+import javax.security.auth.kerberos.KerberosPrincipal;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Properties;
+import java.util.Set;
+
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
@@ -61,7 +60,9 @@ public class KerberosEmbeddedServer extends LDAPEmbeddedServer {
 
     private static final String DEFAULT_KERBEROS_LDIF_FILE = "classpath:kerberos/default-users.ldif";
 
-    private static final String DEFAULT_KERBEROS_REALM = "KEYCLOAK.ORG";
+    public static final String DEFAULT_KERBEROS_REALM = "KEYCLOAK.ORG";
+    public static final String DEFAULT_KERBEROS_REALM_2 = "KC2.COM";
+
     private static final String DEFAULT_KDC_PORT = "6088";
     private static final String DEFAULT_KDC_ENCRYPTION_TYPES = "aes128-cts-hmac-sha1-96, des-cbc-md5, des3-cbc-sha1-kd";
 
@@ -76,8 +77,30 @@ public class KerberosEmbeddedServer extends LDAPEmbeddedServer {
         Properties defaultProperties = new Properties();
         defaultProperties.put(PROPERTY_DSF, DSF_FILE);
 
+        String kerberosRealm = System.getProperty("keycloak.kerberos.realm", DEFAULT_KERBEROS_REALM);
+        configureDefaultPropertiesForRealm(kerberosRealm, defaultProperties);
+
         execute(args, defaultProperties);
     }
+
+
+    public static void configureDefaultPropertiesForRealm(String kerberosRealm, Properties properties) {
+        log.infof("Using kerberos realm: %s", kerberosRealm);
+        if (DEFAULT_KERBEROS_REALM.equals(kerberosRealm)) {
+            // No more configs
+        } else if (DEFAULT_KERBEROS_REALM_2.equals(kerberosRealm)) {
+            properties.put(PROPERTY_BASE_DN, "dc=kc2,dc=com");
+            properties.put(PROPERTY_BIND_PORT, "11389");
+            properties.put(PROPERTY_BIND_LDAPS_PORT, "11636");
+            properties.put(PROPERTY_LDIF_FILE, "classpath:kerberos/default-users-kc2.ldif");
+            properties.put(PROPERTY_KERBEROS_REALM, DEFAULT_KERBEROS_REALM_2);
+            properties.put(PROPERTY_KDC_PORT, "7088");
+        } else {
+            throw new IllegalArgumentException("Valid values for kerberos realm are [ " + DEFAULT_KERBEROS_REALM + " , "
+                    + DEFAULT_KERBEROS_REALM_2 + " ]");
+        }
+    }
+
 
     public static void execute(String[] args, Properties defaultProperties) throws Exception {
         final KerberosEmbeddedServer kerberosEmbeddedServer = new KerberosEmbeddedServer(defaultProperties);

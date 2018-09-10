@@ -16,12 +16,15 @@
  */
 package org.keycloak.services.resources.admin;
 
+import org.jboss.logging.Logger;
 import org.jboss.resteasy.annotations.cache.NoCache;
 import org.jboss.resteasy.spi.NotFoundException;
 import org.keycloak.common.ClientConnection;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.ModelException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleMapperModel;
 import org.keycloak.models.RoleModel;
@@ -29,8 +32,9 @@ import org.keycloak.models.utils.ModelToRepresentation;
 import org.keycloak.representations.idm.ClientMappingsRepresentation;
 import org.keycloak.representations.idm.MappingsRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
-import org.keycloak.services.ServicesLogger;
+import org.keycloak.services.ErrorResponseException;
 import org.keycloak.services.managers.RealmManager;
+import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -42,35 +46,40 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.UriInfo;
+import javax.ws.rs.core.Response;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Base resource for managing users
  *
+ * @resource Role Mapper
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
 public class RoleMapperResource {
-    protected static final ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
+
+    protected static final Logger logger = Logger.getLogger(RoleMapperResource.class);
 
     protected RealmModel realm;
-
-    private RealmAuth auth;
 
     private RoleMapperModel roleMapper;
 
     private AdminEventBuilder adminEvent;
 
-    @Context
-    protected ClientConnection clientConnection;
+    protected AdminPermissionEvaluator.RequirePermissionCheck managePermission;
+    protected AdminPermissionEvaluator.RequirePermissionCheck viewPermission;
+    private AdminPermissionEvaluator auth;
 
     @Context
-    protected UriInfo uriInfo;
+    protected ClientConnection clientConnection;
 
     @Context
     protected KeycloakSession session;
@@ -78,14 +87,20 @@ public class RoleMapperResource {
     @Context
     protected HttpHeaders headers;
 
-    public RoleMapperResource(RealmModel realm, RealmAuth auth,  RoleMapperModel roleMapper, AdminEventBuilder adminEvent) {
+    public RoleMapperResource(RealmModel realm,
+                              AdminPermissionEvaluator auth,
+                              RoleMapperModel roleMapper,
+                              AdminEventBuilder adminEvent,
+                              AdminPermissionEvaluator.RequirePermissionCheck manageCheck,
+                              AdminPermissionEvaluator.RequirePermissionCheck viewCheck) {
         this.auth = auth;
         this.realm = realm;
-        this.adminEvent = adminEvent;
+        this.adminEvent = adminEvent.resource(ResourceType.REALM_ROLE_MAPPING);
         this.roleMapper = roleMapper;
+        this.managePermission = manageCheck;
+        this.viewPermission = viewCheck;
 
     }
-
 
     /**
      * Get role mappings
@@ -96,10 +111,10 @@ public class RoleMapperResource {
     @Produces(MediaType.APPLICATION_JSON)
     @NoCache
     public MappingsRepresentation getRoleMappings() {
-        auth.requireView();
+        viewPermission.require();
 
         MappingsRepresentation all = new MappingsRepresentation();
-        Set<RoleModel> realmMappings = roleMapper.getRoleMappings();
+        Set<RoleModel> realmMappings = roleMapper.getRealmRoleMappings();
         RealmManager manager = new RealmManager(session);
         if (realmMappings.size() > 0) {
             List<RoleRepresentation> realmRep = new ArrayList<RoleRepresentation>();
@@ -141,7 +156,7 @@ public class RoleMapperResource {
     @Produces(MediaType.APPLICATION_JSON)
     @NoCache
     public List<RoleRepresentation> getRealmRoleMappings() {
-        auth.requireView();
+        viewPermission.require();
 
         Set<RoleModel> realmMappings = roleMapper.getRealmRoleMappings();
         List<RoleRepresentation> realmMappingsRep = new ArrayList<RoleRepresentation>();
@@ -163,7 +178,7 @@ public class RoleMapperResource {
     @Produces(MediaType.APPLICATION_JSON)
     @NoCache
     public List<RoleRepresentation> getCompositeRealmRoleMappings() {
-        auth.requireView();
+        viewPermission.require();
 
         Set<RoleModel> roles = realm.getRoles();
         List<RoleRepresentation> realmMappingsRep = new ArrayList<RoleRepresentation>();
@@ -185,10 +200,13 @@ public class RoleMapperResource {
     @Produces(MediaType.APPLICATION_JSON)
     @NoCache
     public List<RoleRepresentation> getAvailableRealmRoleMappings() {
-        auth.requireView();
+        viewPermission.require();
 
         Set<RoleModel> available = realm.getRoles();
-        return ClientRoleMappingsResource.getAvailableRoles(roleMapper, available);
+        Set<RoleModel> set = available.stream().filter(r ->
+            canMapRole(r)
+        ).collect(Collectors.toSet());
+        return ClientRoleMappingsResource.getAvailableRoles(roleMapper, set);
     }
 
     /**
@@ -200,7 +218,7 @@ public class RoleMapperResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public void addRealmRoleMappings(List<RoleRepresentation> roles) {
-        auth.requireManage();
+        managePermission.require();
 
         logger.debugv("** addRealmRoleMappings: {0}", roles);
 
@@ -209,9 +227,11 @@ public class RoleMapperResource {
             if (roleModel == null || !roleModel.getId().equals(role.getId())) {
                 throw new NotFoundException("Role not found");
             }
+            auth.roles().requireMapRole(roleModel);
             roleMapper.grantRole(roleModel);
-            adminEvent.operation(OperationType.CREATE).resourcePath(uriInfo, role.getId()).representation(roles).success();
         }
+
+        adminEvent.operation(OperationType.CREATE).resourcePath(session.getContext().getUri()).representation(roles).success();
     }
 
     /**
@@ -223,27 +243,43 @@ public class RoleMapperResource {
     @DELETE
     @Consumes(MediaType.APPLICATION_JSON)
     public void deleteRealmRoleMappings(List<RoleRepresentation> roles) {
-        auth.requireManage();
+        managePermission.require();
 
         logger.debug("deleteRealmRoleMappings");
         if (roles == null) {
             Set<RoleModel> roleModels = roleMapper.getRealmRoleMappings();
+            roles = new LinkedList<>();
+
             for (RoleModel roleModel : roleModels) {
+                auth.roles().requireMapRole(roleModel);
                 roleMapper.deleteRoleMapping(roleModel);
+                roles.add(ModelToRepresentation.toRepresentation(roleModel));
             }
-            adminEvent.operation(OperationType.CREATE).resourcePath(uriInfo).representation(roles).success();
+
         } else {
             for (RoleRepresentation role : roles) {
                 RoleModel roleModel = realm.getRole(role.getName());
                 if (roleModel == null || !roleModel.getId().equals(role.getId())) {
                     throw new NotFoundException("Role not found");
                 }
-                roleMapper.deleteRoleMapping(roleModel);
-
-                adminEvent.operation(OperationType.DELETE).resourcePath(uriInfo, role.getId()).representation(roles).success();
+                auth.roles().requireMapRole(roleModel);
+                try {
+                    roleMapper.deleteRoleMapping(roleModel);
+                } catch (ModelException me) {
+                    Properties messages = AdminRoot.getMessages(session, realm, auth.adminAuth().getToken().getLocale());
+                    throw new ErrorResponseException(me.getMessage(), MessageFormat.format(messages.getProperty(me.getMessage(), me.getMessage()), me.getParameters()),
+                            Response.Status.BAD_REQUEST);
+                }
             }
+
         }
 
+        adminEvent.operation(OperationType.DELETE).resourcePath(session.getContext().getUri()).representation(roles).success();
+
+    }
+
+    private boolean canMapRole(RoleModel roleModel) {
+        return auth.roles().canMapRole(roleModel);
     }
 
     @Path("clients/{client}")
@@ -252,8 +288,10 @@ public class RoleMapperResource {
         if (clientModel == null) {
             throw new NotFoundException("Client not found");
         }
-
-        return new ClientRoleMappingsResource(uriInfo, realm, auth, roleMapper, clientModel, adminEvent);
+        ClientRoleMappingsResource resource = new ClientRoleMappingsResource(session.getContext().getUri(), session, realm, auth, roleMapper,
+                clientModel, adminEvent,
+                managePermission, viewPermission);
+        return resource;
 
     }
 }

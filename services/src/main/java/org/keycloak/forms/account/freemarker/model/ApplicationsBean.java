@@ -17,21 +17,29 @@
 
 package org.keycloak.forms.account.freemarker.model;
 
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Set;
-
+import org.keycloak.common.util.MultivaluedHashMap;
+import org.keycloak.forms.login.freemarker.model.OAuthGrantBean;
 import org.keycloak.models.ClientModel;
+import org.keycloak.models.ClientScopeModel;
+import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.UserConsentModel;
+import org.keycloak.models.OrderedModel;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
+import org.keycloak.models.UserConsentModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.protocol.oidc.TokenManager;
 import org.keycloak.services.managers.UserSessionManager;
-import org.keycloak.common.util.MultivaluedHashMap;
+import org.keycloak.services.resources.admin.permissions.AdminPermissions;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -51,37 +59,43 @@ public class ApplicationsBean {
                 continue;
             }
 
-            Set<RoleModel> availableRoles = TokenManager.getAccess(null, false, client, user);
-            // Don't show applications, which user doesn't have access into (any available roles)
-            if (availableRoles.isEmpty()) {
-                continue;
+            Set<RoleModel> availableRoles = new HashSet<>();
+            if (client.getClientId().equals(Constants.ADMIN_CLI_CLIENT_ID)
+                    || client.getClientId().equals(Constants.ADMIN_CONSOLE_CLIENT_ID)) {
+                if (!AdminPermissions.realms(session, realm, user).isAdmin()) continue;
+
+            } else {
+                // Construct scope parameter with all optional scopes to see all potentially available roles
+                Set<ClientScopeModel> allClientScopes = new HashSet<>(client.getClientScopes(true, true).values());
+                allClientScopes.addAll(client.getClientScopes(false, true).values());
+                allClientScopes.add(client);
+
+                availableRoles = TokenManager.getAccess(user, client, allClientScopes);
             }
             List<RoleModel> realmRolesAvailable = new LinkedList<RoleModel>();
             MultivaluedHashMap<String, ClientRoleEntry> resourceRolesAvailable = new MultivaluedHashMap<String, ClientRoleEntry>();
             processRoles(availableRoles, realmRolesAvailable, resourceRolesAvailable);
 
-            List<RoleModel> realmRolesGranted = new LinkedList<RoleModel>();
-            MultivaluedHashMap<String, ClientRoleEntry> resourceRolesGranted = new MultivaluedHashMap<String, ClientRoleEntry>();
-            List<String> claimsGranted = new LinkedList<String>();
+            List<ClientScopeModel> orderedScopes = new ArrayList<>();
             if (client.isConsentRequired()) {
-                UserConsentModel consent = user.getConsentByClient(client.getId());
+                UserConsentModel consent = session.users().getConsentByClient(realm, user.getId(), client.getId());
 
                 if (consent != null) {
-                    processRoles(consent.getGrantedRoles(), realmRolesGranted, resourceRolesGranted);
-
-                    for (ProtocolMapperModel protocolMapper : consent.getGrantedProtocolMappers()) {
-                        claimsGranted.add(protocolMapper.getConsentText());
-                    }
+                    orderedScopes.addAll(consent.getGrantedClientScopes());
+                    orderedScopes.sort(new OrderedModel.OrderedModelComparator<>());
                 }
             }
+            List<String> clientScopesGranted = orderedScopes.stream()
+                    .map(ClientScopeModel::getConsentScreenText)
+                    .collect(Collectors.toList());
 
             List<String> additionalGrants = new ArrayList<>();
             if (offlineClients.contains(client)) {
                 additionalGrants.add("${offlineToken}");
             }
 
-            ApplicationEntry appEntry = new ApplicationEntry(realmRolesAvailable, resourceRolesAvailable, realmRolesGranted, resourceRolesGranted, client,
-                    claimsGranted, additionalGrants);
+            ApplicationEntry appEntry = new ApplicationEntry(realmRolesAvailable, resourceRolesAvailable, client,
+                    clientScopesGranted, additionalGrants);
             applications.add(appEntry);
         }
     }
@@ -107,21 +121,16 @@ public class ApplicationsBean {
 
         private final List<RoleModel> realmRolesAvailable;
         private final MultivaluedHashMap<String, ClientRoleEntry> resourceRolesAvailable;
-        private final List<RoleModel> realmRolesGranted;
-        private final MultivaluedHashMap<String, ClientRoleEntry> resourceRolesGranted;
         private final ClientModel client;
-        private final List<String> claimsGranted;
+        private final List<String> clientScopesGranted;
         private final List<String> additionalGrants;
 
         public ApplicationEntry(List<RoleModel> realmRolesAvailable, MultivaluedHashMap<String, ClientRoleEntry> resourceRolesAvailable,
-                                List<RoleModel> realmRolesGranted, MultivaluedHashMap<String, ClientRoleEntry> resourceRolesGranted,
-                                ClientModel client, List<String> claimsGranted, List<String> additionalGrants) {
+                                ClientModel client, List<String> clientScopesGranted, List<String> additionalGrants) {
             this.realmRolesAvailable = realmRolesAvailable;
             this.resourceRolesAvailable = resourceRolesAvailable;
-            this.realmRolesGranted = realmRolesGranted;
-            this.resourceRolesGranted = resourceRolesGranted;
             this.client = client;
-            this.claimsGranted = claimsGranted;
+            this.clientScopesGranted = clientScopesGranted;
             this.additionalGrants = additionalGrants;
         }
 
@@ -133,20 +142,53 @@ public class ApplicationsBean {
             return resourceRolesAvailable;
         }
 
-        public List<RoleModel> getRealmRolesGranted() {
-            return realmRolesGranted;
+        public List<String> getClientScopesGranted() {
+            return clientScopesGranted;
         }
 
-        public MultivaluedHashMap<String, ClientRoleEntry> getResourceRolesGranted() {
-            return resourceRolesGranted;
+        public String getEffectiveUrl() {
+            String rootUrl = getClient().getRootUrl();
+            String baseUrl = getClient().getBaseUrl();
+            
+            if (rootUrl == null) rootUrl = "";
+            if (baseUrl == null) baseUrl = "";
+            
+            if (rootUrl.equals("") && baseUrl.equals("")) {
+                return "";
+            }
+            
+            if (rootUrl.equals("") && !baseUrl.equals("")) {
+                return baseUrl;
+            }
+            
+            if (!rootUrl.equals("") && baseUrl.equals("")) {
+                return rootUrl;
+            }
+            
+            if (isBaseUrlRelative() && !rootUrl.equals("")) {
+                return concatUrls(rootUrl, baseUrl);
+            }
+            
+            return baseUrl;
         }
-
+        
+        private String concatUrls(String u1, String u2) {
+            if (u1.endsWith("/")) u1 = u1.substring(0, u1.length() - 1);
+            if (u2.startsWith("/")) u2 = u2.substring(1);
+            return u1 + "/" + u2;
+        }
+        
+        private boolean isBaseUrlRelative() {
+            String baseUrl = getClient().getBaseUrl();
+            if (baseUrl.equals("")) return false;
+            if (baseUrl.startsWith("/")) return true;
+            if (baseUrl.startsWith("./")) return true;
+            if (baseUrl.startsWith("../")) return true;
+            return false;
+        }
+        
         public ClientModel getClient() {
             return client;
-        }
-
-        public List<String> getClaimsGranted() {
-            return claimsGranted;
         }
 
         public List<String> getAdditionalGrants() {

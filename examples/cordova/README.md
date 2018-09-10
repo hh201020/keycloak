@@ -23,10 +23,17 @@ Install to Android phone or emulator
 ------------------------------------
 
     mkdir platforms plugins
-    cordova plugin add org.apache.cordova.inappbrowser
+    cordova plugin add cordova-plugin-inappbrowser
     cordova plugin add cordova-plugin-whitelist
     cordova platform add android
     cordova run android
 
 
 Once the application is opened you can login with username: 'user', and password: 'password'.
+
+
+Troubleshooting
+-----------------------------------------
+
+ * You always need to initialize keycloak after the 'deviceready' event. Otherwise Cordova mode won't be enabled for keycloak.js.
+ * 'http://localhost' should be listed in the allowed redirects in client configuration, but never 'file:///android_asset'.

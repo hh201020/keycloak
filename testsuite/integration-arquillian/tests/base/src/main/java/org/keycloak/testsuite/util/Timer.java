@@ -16,6 +16,15 @@
  */
 package org.keycloak.testsuite.util;
 
+import org.apache.commons.io.IOUtils;
+import org.jboss.logging.Logger;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartUtilities;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
+
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -26,16 +35,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import org.apache.commons.io.IOUtils;
-import org.jboss.logging.Logger;
-import org.jfree.chart.ChartFactory;
-import org.jfree.chart.ChartUtilities;
-import org.jfree.chart.JFreeChart;
-import org.jfree.chart.plot.PlotOrientation;
-import org.jfree.data.xy.XYSeries;
-import org.jfree.data.xy.XYSeriesCollection;
-import static org.keycloak.testsuite.util.IOUtil.PROJECT_BUILD_DIRECTORY;
-import static org.jgroups.util.Util.assertTrue;
+
+import static org.keycloak.testsuite.utils.io.IOUtil.PROJECT_BUILD_DIRECTORY;
 
 /**
  *
@@ -88,7 +89,7 @@ public class Timer {
 
     private void logOperation(String operation, long duration) {
         if (!stats.containsKey(operation)) {
-            stats.put(operation, new ArrayList<Long>());
+            stats.put(operation, new ArrayList<>());
         }
         stats.get(operation).add(duration);
         log.info(String.format("Operation '%s' took: %s ms", operation, duration));
@@ -132,8 +133,8 @@ public class Timer {
             }
             OutputStream stream = new BufferedOutputStream(new FileOutputStream(f));
             for (Long duration : stats.get(op)) {
-                IOUtils.write(duration.toString(), stream);
-                IOUtils.write("\n", stream);
+                IOUtils.write(duration.toString(), stream, "UTF-8");
+                IOUtils.write("\n", stream, "UTF-8");
             }
             stream.flush();
             IOUtils.closeQuietly(stream);

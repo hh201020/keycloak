@@ -16,7 +16,6 @@
  */
 package org.keycloak.subsystem.saml.as7;
 
-
 /**
  * @author <a href="mailto:mstrukel@redhat.com">Marko Strukelj</a>
  */
@@ -45,6 +44,9 @@ public class Constants {
         static final String KEY_STORE = "KeyStore";
         static final String SIGN_REQUEST = "signRequest";
         static final String VALIDATE_RESPONSE_SIGNATURE = "validateResponseSignature";
+        static final String VALIDATE_ASSERTION_SIGNATURE = "validateAssertionSignature";
+        static final String ASSERTION_CONSUMER_SERVICE_URL = "assertionConsumerServiceUrl";
+
         static final String REQUEST_BINDING = "requestBinding";
         static final String BINDING_URL = "bindingUrl";
         static final String VALIDATE_REQUEST_SIGNATURE = "validateRequestSignature";
@@ -67,7 +69,6 @@ public class Constants {
         static final String FILE = "file";
         static final String SIGNATURES_REQUIRED = "signaturesRequired";
     }
-
 
     static class XML {
         static final String SECURE_DEPLOYMENT = "secure-deployment";
@@ -97,6 +98,7 @@ public class Constants {
         static final String CERTIFICATE_ALIAS = "alias";
         static final String SIGN_REQUEST = "signRequest";
         static final String VALIDATE_RESPONSE_SIGNATURE = "validateResponseSignature";
+        static final String VALIDATE_ASSERTION_SIGNATURE = "validateAssertionSignature";
         static final String REQUEST_BINDING = "requestBinding";
         static final String BINDING_URL = "bindingUrl";
         static final String VALIDATE_REQUEST_SIGNATURE = "validateRequestSignature";
@@ -120,5 +122,6 @@ public class Constants {
         static final String ALIAS = "alias";
         static final String FILE = "file";
         static final String SIGNATURES_REQUIRED = "signaturesRequired";
+        static final String ASSERTION_CONSUMER_SERVICE_URL = "assertionConsumerServiceUrl";
     }
 }

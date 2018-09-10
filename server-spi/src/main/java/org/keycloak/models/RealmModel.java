@@ -18,15 +18,14 @@
 package org.keycloak.models;
 
 import org.keycloak.common.enums.SslRequired;
+import org.keycloak.component.ComponentModel;
 import org.keycloak.provider.ProviderEvent;
+import org.keycloak.storage.UserStorageProvider;
+import org.keycloak.storage.UserStorageProviderModel;
+import org.keycloak.storage.client.ClientStorageProvider;
+import org.keycloak.storage.client.ClientStorageProviderModel;
 
-import java.security.Key;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.security.cert.X509Certificate;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -37,13 +36,41 @@ public interface RealmModel extends RoleContainerModel {
         RealmModel getCreatedRealm();
     }
 
+    interface RealmPostCreateEvent extends ProviderEvent {
+        RealmModel getCreatedRealm();
+        KeycloakSession getKeycloakSession();
+    }
+
+    interface RealmRemovedEvent extends ProviderEvent {
+        RealmModel getRealm();
+        KeycloakSession getKeycloakSession();
+    }
+
     interface ClientCreationEvent extends ProviderEvent {
         ClientModel getCreatedClient();
     }
 
-    interface UserFederationProviderCreationEvent extends ProviderEvent {
-        UserFederationProviderModel getCreatedFederationProvider();
+    // Called also during client creation after client is fully initialized (including all attributes etc)
+    interface ClientUpdatedEvent extends ProviderEvent {
+        ClientModel getUpdatedClient();
+        KeycloakSession getKeycloakSession();
+    }
+
+    interface ClientRemovedEvent extends ProviderEvent {
+        ClientModel getClient();
+        KeycloakSession getKeycloakSession();
+    }
+
+    interface IdentityProviderUpdatedEvent extends ProviderEvent {
         RealmModel getRealm();
+        IdentityProviderModel getUpdatedIdentityProvider();
+        KeycloakSession getKeycloakSession();
+    }
+
+    interface IdentityProviderRemovedEvent extends ProviderEvent {
+        RealmModel getRealm();
+        IdentityProviderModel getRemovedIdentityProvider();
+        KeycloakSession getKeycloakSession();
     }
 
     String getId();
@@ -84,9 +111,26 @@ public interface RealmModel extends RoleContainerModel {
 
     void setEditUsernameAllowed(boolean editUsernameAllowed);
 
+    boolean isUserManagedAccessAllowed();
+
+    void setUserManagedAccessAllowed(boolean userManagedAccessAllowed);
+
+    void setAttribute(String name, String value);
+    void setAttribute(String name, Boolean value);
+    void setAttribute(String name, Integer value);
+    void setAttribute(String name, Long value);
+    void removeAttribute(String name);
+    String getAttribute(String name);
+    Integer getAttribute(String name, Integer defaultValue);
+    Long getAttribute(String name, Long defaultValue);
+    Boolean getAttribute(String name, Boolean defaultValue);
+    Map<String, String> getAttributes();
+
     //--- brute force settings
     boolean isBruteForceProtected();
     void setBruteForceProtected(boolean value);
+    boolean isPermanentLockout();
+    void setPermanentLockout(boolean val);
     int getMaxFailureWaitSeconds();
     void setMaxFailureWaitSeconds(int val);
     int getWaitIncrementSeconds();
@@ -106,12 +150,23 @@ public interface RealmModel extends RoleContainerModel {
 
     void setVerifyEmail(boolean verifyEmail);
 
+    boolean isLoginWithEmailAllowed();
+
+    void setLoginWithEmailAllowed(boolean loginWithEmailAllowed);
+
+    boolean isDuplicateEmailsAllowed();
+
+    void setDuplicateEmailsAllowed(boolean duplicateEmailsAllowed);
+
     boolean isResetPasswordAllowed();
 
     void setResetPasswordAllowed(boolean resetPasswordAllowed);
 
     boolean isRevokeRefreshToken();
     void setRevokeRefreshToken(boolean revokeRefreshToken);
+
+    int getRefreshTokenMaxReuse();
+    void setRefreshTokenMaxReuse(int revokeRefreshTokenCount);
 
     int getSsoSessionIdleTimeout();
     void setSsoSessionIdleTimeout(int seconds);
@@ -123,6 +178,13 @@ public interface RealmModel extends RoleContainerModel {
     void setOfflineSessionIdleTimeout(int seconds);
 
     int getAccessTokenLifespan();
+
+    // KEYCLOAK-7688 Offline Session Max for Offline Token
+    boolean isOfflineSessionMaxLifespanEnabled();
+    void setOfflineSessionMaxLifespanEnabled(boolean offlineSessionMaxLifespanEnabled);
+
+    int getOfflineSessionMaxLifespan();
+    void setOfflineSessionMaxLifespan(int seconds);
 
     void setAccessTokenLifespan(int seconds);
 
@@ -137,36 +199,25 @@ public interface RealmModel extends RoleContainerModel {
 
     void setAccessCodeLifespanUserAction(int seconds);
 
+    /**
+     * This method will return a map with all the lifespans available
+     * or an empty map, but never null.
+     * @return map with user action token lifespans
+     */
+    Map<String, Integer> getUserActionTokenLifespans();
+
     int getAccessCodeLifespanLogin();
 
     void setAccessCodeLifespanLogin(int seconds);
 
-    String getPublicKeyPem();
+    int getActionTokenGeneratedByAdminLifespan();
+    void setActionTokenGeneratedByAdminLifespan(int seconds);
 
-    void setPublicKeyPem(String publicKeyPem);
+    int getActionTokenGeneratedByUserLifespan();
+    void setActionTokenGeneratedByUserLifespan(int seconds);
 
-    String getPrivateKeyPem();
-
-    void setPrivateKeyPem(String privateKeyPem);
-
-    PublicKey getPublicKey();
-
-    void setPublicKey(PublicKey publicKey);
-
-    String getCodeSecret();
-
-    Key getCodeSecretKey();
-
-    void setCodeSecret(String codeSecret);
-
-    X509Certificate getCertificate();
-    void setCertificate(X509Certificate certificate);
-    String getCertificatePem();
-    void setCertificatePem(String certificate);
-
-    PrivateKey getPrivateKey();
-
-    void setPrivateKey(PrivateKey privateKey);
+    int getActionTokenGeneratedByUserLifespan(String actionTokenType);
+    void setActionTokenGeneratedByUserLifespan(String actionTokenType, Integer seconds);
 
     List<RequiredCredentialModel> getRequiredCredentials();
 
@@ -222,6 +273,9 @@ public interface RealmModel extends RoleContainerModel {
     AuthenticationFlowModel getClientAuthenticationFlow();
     void setClientAuthenticationFlow(AuthenticationFlowModel flow);
 
+    AuthenticationFlowModel getDockerAuthenticationFlow();
+    void setDockerAuthenticationFlow(AuthenticationFlowModel flow);
+
     List<AuthenticationFlowModel> getAuthenticationFlows();
     AuthenticationFlowModel getFlowByAlias(String alias);
     AuthenticationFlowModel addAuthenticationFlow(AuthenticationFlowModel model);
@@ -263,21 +317,52 @@ public interface RealmModel extends RoleContainerModel {
     public IdentityProviderMapperModel getIdentityProviderMapperById(String id);
     public IdentityProviderMapperModel getIdentityProviderMapperByName(String brokerAlias, String name);
 
-    // Should return list sorted by UserFederationProviderModel.priority
-    List<UserFederationProviderModel> getUserFederationProviders();
 
-    UserFederationProviderModel addUserFederationProvider(String providerName, Map<String, String> config, int priority, String displayName, int fullSyncPeriod, int changedSyncPeriod, int lastSync);
-    void updateUserFederationProvider(UserFederationProviderModel provider);
-    void removeUserFederationProvider(UserFederationProviderModel provider);
-    void setUserFederationProviders(List<UserFederationProviderModel> providers);
+    /**
+     * Adds component model.  Will call onCreate() method of ComponentFactory
+     *
+     * @param model
+     * @return
+     */
+    ComponentModel addComponentModel(ComponentModel model);
 
-    Set<UserFederationMapperModel> getUserFederationMappers();
-    Set<UserFederationMapperModel> getUserFederationMappersByFederationProvider(String federationProviderId);
-    UserFederationMapperModel addUserFederationMapper(UserFederationMapperModel mapper);
-    void removeUserFederationMapper(UserFederationMapperModel mapper);
-    void updateUserFederationMapper(UserFederationMapperModel mapper);
-    UserFederationMapperModel getUserFederationMapperById(String id);
-    UserFederationMapperModel getUserFederationMapperByName(String federationProviderId, String name);
+    /**
+     * Adds component model.  Will NOT call onCreate() method of ComponentFactory
+     *
+     * @param model
+     * @return
+     */
+    ComponentModel importComponentModel(ComponentModel model);
+
+    void updateComponent(ComponentModel component);
+    void removeComponent(ComponentModel component);
+    void removeComponents(String parentId);
+    List<ComponentModel> getComponents(String parentId, String providerType);
+
+    List<ComponentModel> getComponents(String parentId);
+
+    List<ComponentModel> getComponents();
+    ComponentModel getComponent(String id);
+
+    default
+    List<UserStorageProviderModel> getUserStorageProviders() {
+        List<UserStorageProviderModel> list = new LinkedList<>();
+        for (ComponentModel component : getComponents(getId(), UserStorageProvider.class.getName())) {
+            list.add(new UserStorageProviderModel(component));
+        }
+        Collections.sort(list, UserStorageProviderModel.comparator);
+        return list;
+    }
+
+    default
+    List<ClientStorageProviderModel> getClientStorageProviders() {
+        List<ClientStorageProviderModel> list = new LinkedList<>();
+        for (ComponentModel component : getComponents(getId(), ClientStorageProvider.class.getName())) {
+            list.add(new ClientStorageProviderModel(component));
+        }
+        Collections.sort(list, ClientStorageProviderModel.comparator);
+        return list;
+    }
 
     String getLoginTheme();
 
@@ -305,8 +390,6 @@ public interface RealmModel extends RoleContainerModel {
 
     void setNotBefore(int notBefore);
 
-    boolean removeRoleById(String id);
-
     boolean isEventsEnabled();
 
     void setEventsEnabled(boolean enabled);
@@ -322,19 +405,19 @@ public interface RealmModel extends RoleContainerModel {
     Set<String> getEventsListeners();
 
     void setEventsListeners(Set<String> listeners);
-    
+
     Set<String> getEnabledEventTypes();
 
     void setEnabledEventTypes(Set<String> enabledEventTypes);
-    
+
     boolean isAdminEventsEnabled();
 
     void setAdminEventsEnabled(boolean enabled);
-    
+
     boolean isAdminEventsDetailsEnabled();
 
     void setAdminEventsDetailsEnabled(boolean enabled);
-    
+
     ClientModel getMasterAdminClient();
 
     void setMasterAdminClient(ClientModel client);
@@ -351,27 +434,28 @@ public interface RealmModel extends RoleContainerModel {
     GroupModel createGroup(String name);
     GroupModel createGroup(String id, String name);
 
-    /**
-     * Move Group to top realm level.  Basically just sets group parent to null.  You need to call this though
-     * to make sure caches are set properly
-     *
-     * @param subGroup
-     */
-    void addTopLevelGroup(GroupModel subGroup);
     GroupModel getGroupById(String id);
     List<GroupModel> getGroups();
+    Long getGroupsCount(Boolean onlyTopGroups);
+    Long getGroupsCountByNameContaining(String search);
     List<GroupModel> getTopLevelGroups();
+    List<GroupModel> getTopLevelGroups(Integer first, Integer max);
+    List<GroupModel> searchForGroupByName(String search, Integer first, Integer max);
     boolean removeGroup(GroupModel group);
     void moveGroup(GroupModel group, GroupModel toParent);
 
-    List<ClientTemplateModel> getClientTemplates();
+    List<ClientScopeModel> getClientScopes();
 
-    ClientTemplateModel addClientTemplate(String name);
+    ClientScopeModel addClientScope(String name);
 
-    ClientTemplateModel addClientTemplate(String id, String name);
+    ClientScopeModel addClientScope(String id, String name);
 
-    boolean removeClientTemplate(String id);
+    boolean removeClientScope(String id);
 
-    ClientTemplateModel getClientTemplateById(String id);
+    ClientScopeModel getClientScopeById(String id);
+
+    void addDefaultClientScope(ClientScopeModel clientScope, boolean defaultScope);
+    void removeDefaultClientScope(ClientScopeModel clientScope);
+    List<ClientScopeModel> getDefaultClientScopes(boolean defaultScope);
 
 }

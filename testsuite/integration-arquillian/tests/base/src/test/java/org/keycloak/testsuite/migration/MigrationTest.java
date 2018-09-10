@@ -16,70 +16,84 @@
  */
 package org.keycloak.testsuite.migration;
 
-import java.util.List;
-import static org.junit.Assert.*;
-import org.junit.Ignore;
+import org.jboss.arquillian.container.test.api.Deployment;
+import org.jboss.arquillian.container.test.api.TargetsContainer;
+import org.jboss.shrinkwrap.api.spec.WebArchive;
+import org.junit.Before;
 import org.junit.Test;
-import org.keycloak.admin.client.resource.ClientsResource;
 import org.keycloak.admin.client.resource.RealmResource;
-import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
-import org.keycloak.representations.idm.RoleRepresentation;
-import org.keycloak.testsuite.AbstractKeycloakTest;
+import org.keycloak.testsuite.arquillian.DeploymentTargetModifier;
 import org.keycloak.testsuite.arquillian.migration.Migration;
+import org.keycloak.testsuite.runonserver.RunOnServerDeployment;
+
+import javax.ws.rs.NotFoundException;
+import java.util.List;
+
+import static org.keycloak.testsuite.auth.page.AuthRealm.MASTER;
 
 /**
  * @author <a href="mailto:vramik@redhat.com">Vlastislav Ramik</a>
  */
-public class MigrationTest extends AbstractKeycloakTest {
-    
+public class MigrationTest extends AbstractMigrationTest {
+
+    @Deployment
+    @TargetsContainer(DeploymentTargetModifier.AUTH_SERVER_CURRENT)
+    public static WebArchive deploy() {
+        return RunOnServerDeployment.create();
+    }
+
     @Override
     public void addTestRealms(List<RealmRepresentation> testRealms) {
         log.info("Adding no test realms for migration test. Test realm should be migrated from previous vesrion.");
     }
-    
-    @Test
-    @Migration(versionFrom = "1.6.1.Final")
-    public void migration16Test() {
-        RealmResource realmResource = adminClient.realms().realm("Migration");
-        RealmRepresentation realmRep = realmResource.toRepresentation();
-        assertEquals("Migration", realmRep.getRealm());
-        
-        List<RoleRepresentation> realmRoles = realmResource.roles().list();
-        assertEquals(1, realmRoles.size());
-        assertEquals("offline_access", realmRoles.get(0).getName());
-        
-        for (ClientRepresentation client : realmResource.clients().findAll()) {
-            final String clientId = client.getClientId();
-            switch (clientId) {
-                case "realm-management":
-                    assertEquals(13, realmResource.clients().get(client.getId()).roles().list().size());
-                    break;
-                case "security-admin-console":
-                    assertEquals(0, realmResource.clients().get(client.getId()).roles().list().size());
-                    break;
-                case "broker":
-                    assertEquals(1, realmResource.clients().get(client.getId()).roles().list().size());
-                    break;
-                case "account":
-                    assertEquals(2, realmResource.clients().get(client.getId()).roles().list().size());
-                    break;
-                default:
-                    fail("Migrated realm contains unexpected client " + clientId);
-                    break;
-            }
-        }
-    }
-    
-    @Test
-    @Migration(versionFrom = "1.5.1.Final")
-    @Ignore
-    public void migration15Test() {
-        for (RealmRepresentation realm : adminClient.realms().findAll()) {
-            System.out.println(realm.getRealm());
-        }
-        
-        //TODO
+
+    @Before
+    public void beforeMigrationTest() {
+        migrationRealm = adminClient.realms().realm(MIGRATION);
+        migrationRealm2 = adminClient.realms().realm(MIGRATION2);
+        migrationRealm3 = adminClient.realms().realm("authorization");
+        masterRealm = adminClient.realms().realm(MASTER);
+        //add migration realms to testRealmReps to make them removed after test
+        addTestRealmToTestRealmReps(migrationRealm);
+        addTestRealmToTestRealmReps(migrationRealm2);
+        addTestRealmToTestRealmReps(migrationRealm3);
     }
 
+    private void addTestRealmToTestRealmReps(RealmResource realm) {
+        try {
+            testRealmReps.add(realm.toRepresentation());
+        } catch (NotFoundException ex) {
+        }
+    }
+
+    @Test
+    @Migration(versionFrom = "3.4.3.Final")
+    public void migration3_4_3Test() {
+        testMigratedData();
+        testMigrationTo4_x();
+    }
+
+    @Test
+    @Migration(versionFrom = "2.5.5.Final")
+    public void migration2_5_5Test() {
+        testMigratedData();
+        testMigrationTo3_x();
+        testMigrationTo4_x();
+    }
+
+    @Test
+    @Migration(versionFrom = "1.9.8.Final")
+    public void migration1_9_8Test() throws Exception {
+        testMigratedData(false);
+        testMigrationTo2_x();
+        testMigrationTo3_x();
+        testMigrationTo4_x(false);
+    }
+
+    @Test
+    @Migration(versionFrom = "2.2.1.Final")
+    public void migrationInAuthorizationServicesTest() {
+        testDroolsToRulesPolicyTypeMigration();
+    }
 }

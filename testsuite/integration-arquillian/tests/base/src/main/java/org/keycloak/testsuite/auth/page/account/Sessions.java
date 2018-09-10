@@ -16,12 +16,13 @@
  */
 package org.keycloak.testsuite.auth.page.account;
 
-import java.util.LinkedList;
-import java.util.List;
-import javax.ws.rs.core.UriBuilder;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
+
+import javax.ws.rs.core.UriBuilder;
+import java.util.LinkedList;
+import java.util.List;
 
 /**
  *
@@ -43,9 +44,9 @@ public class Sessions extends AccountManagement {
     }
 
     public List<List<String>> getSessions() {
-        List<List<String>> table = new LinkedList<List<String>>();
+        List<List<String>> table = new LinkedList<>();
         for (WebElement r : driver.findElements(By.tagName("tr"))) {
-            List<String> row = new LinkedList<String>();
+            List<String> row = new LinkedList<>();
             for (WebElement col : r.findElements(By.tagName("td"))) {
                 row.add(col.getText());
             }

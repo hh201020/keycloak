@@ -35,7 +35,7 @@ angular.element(document).ready(function ($http) {
         console.log('here login');
         auth.loggedIn = true;
         auth.authz = keycloakAuth;
-        auth.logoutUrl = keycloakAuth.authServerUrl + "/realms/" + keycloakAuth.realm + "/tokens/logout?redirect_uri=http://localhost:8080/angular-cors-product/index.html";
+        auth.logoutUrl = keycloakAuth.authServerUrl + "/realms/" + keycloakAuth.realm + "/protocol/openid-connect/logout?redirect_uri=http://localhost:8080/angular-cors-product/index.html"
         module.factory('Auth', function() {
             return auth;
         });
@@ -87,8 +87,13 @@ module.controller('GlobalCtrl', function($scope, $http) {
     };
 
     $scope.loadPublicRealmInfo = function() {
-        $http.get("http://localhost-auth:8080/auth/realms/cors").success(function(data) {
-            $scope.realm = angular.fromJson(data);
+        $http.get("http://localhost-auth:8080/auth/realms/cors/.well-known/openid-configuration").success(function(data) {
+            $scope.realmOIDCInfo = angular.fromJson(data);
+
+            var jwksUri = $scope.realmOIDCInfo.jwks_uri;
+            $http.get(jwksUri).success(function(data) {
+                $scope.publicKeys = angular.fromJson(data);
+            });
         });
     };
 

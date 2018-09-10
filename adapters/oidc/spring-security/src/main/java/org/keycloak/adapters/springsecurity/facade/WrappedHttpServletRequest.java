@@ -24,6 +24,8 @@ import org.keycloak.adapters.spi.LogoutError;
 import org.springframework.util.Assert;
 
 import javax.servlet.http.HttpServletRequest;
+
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -40,6 +42,7 @@ import java.util.List;
 class WrappedHttpServletRequest implements Request {
 
     private final HttpServletRequest request;
+    private InputStream inputStream;
 
     /**
      * Creates a new request for the given <code>HttpServletRequest</code>
@@ -68,6 +71,11 @@ class WrappedHttpServletRequest implements Request {
             buf.append('?').append(request.getQueryString());
         }
         return buf.toString();
+    }
+
+    @Override
+    public String getRelativePath() {
+        return request.getServletPath();
     }
 
     @Override
@@ -117,10 +125,27 @@ class WrappedHttpServletRequest implements Request {
 
     @Override
     public InputStream getInputStream() {
+        return getInputStream(false);
+    }
+
+    @Override
+    public InputStream getInputStream(boolean buffered) {
+        if (inputStream != null) {
+            return inputStream;
+        }
+
+        if (buffered) {
+            try {
+                return inputStream = new BufferedInputStream(request.getInputStream());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
         try {
             return request.getInputStream();
         } catch (IOException e) {
-            throw new RuntimeException("Unable to get request input stream", e);
+            throw new RuntimeException(e);
         }
     }
 

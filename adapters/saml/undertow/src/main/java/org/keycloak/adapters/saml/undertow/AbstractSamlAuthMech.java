@@ -16,6 +16,14 @@
  */
 package org.keycloak.adapters.saml.undertow;
 
+import io.undertow.security.api.AuthenticationMechanism;
+import io.undertow.security.api.NotificationReceiver;
+import io.undertow.security.api.SecurityContext;
+import io.undertow.security.api.SecurityNotification;
+import io.undertow.server.HttpServerExchange;
+import io.undertow.util.AttachmentKey;
+import io.undertow.util.Headers;
+import io.undertow.util.StatusCodes;
 import org.keycloak.adapters.saml.SamlAuthenticator;
 import org.keycloak.adapters.saml.SamlDeployment;
 import org.keycloak.adapters.saml.SamlDeploymentContext;
@@ -25,15 +33,9 @@ import org.keycloak.adapters.spi.AuthOutcome;
 import org.keycloak.adapters.spi.HttpFacade;
 import org.keycloak.adapters.undertow.UndertowHttpFacade;
 import org.keycloak.adapters.undertow.UndertowUserSessionManagement;
-
-import io.undertow.security.api.AuthenticationMechanism;
-import io.undertow.security.api.NotificationReceiver;
-import io.undertow.security.api.SecurityContext;
-import io.undertow.security.api.SecurityNotification;
-import io.undertow.server.HttpServerExchange;
-import io.undertow.util.AttachmentKey;
-import io.undertow.util.Headers;
-import io.undertow.util.StatusCodes;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 /**
  * Abstract base class for a Keycloak-enabled Undertow AuthenticationMechanism.
@@ -41,6 +43,9 @@ import io.undertow.util.StatusCodes;
  * @author Stan Silvert ssilvert@redhat.com (C) 2014 Red Hat Inc.
  */
 public abstract class AbstractSamlAuthMech implements AuthenticationMechanism {
+
+    private static final Logger LOG = Logger.getLogger(AbstractSamlAuthMech.class.getName());
+
     public static final AttachmentKey<AuthChallenge> KEYCLOAK_CHALLENGE_ATTACHMENT_KEY = AttachmentKey.create(AuthChallenge.class);
     protected SamlDeploymentContext deploymentContext;
     protected UndertowUserSessionManagement sessionManagement;
@@ -69,11 +74,22 @@ public abstract class AbstractSamlAuthMech implements AuthenticationMechanism {
         return StatusCodes.TEMPORARY_REDIRECT;
     }
 
+    private static final Pattern PROTOCOL_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:");
+
     static void sendRedirect(final HttpServerExchange exchange, final String location) {
-        // TODO - String concatenation to construct URLS is extremely error prone - switch to a URI which will better
-        // handle this.
-        String loc = exchange.getRequestScheme() + "://" + exchange.getHostAndPort() + location;
-        exchange.getResponseHeaders().put(Headers.LOCATION, loc);
+        if (location == null) {
+            LOG.log(Level.WARNING, "Logout page not set.");
+            exchange.setStatusCode(StatusCodes.NOT_FOUND);
+            exchange.endExchange();
+            return;
+        }
+
+        if (PROTOCOL_PATTERN.matcher(location).find()) {
+            exchange.getResponseHeaders().put(Headers.LOCATION, location);
+        } else {
+            String loc = exchange.getRequestScheme() + "://" + exchange.getHostAndPort() + location;
+            exchange.getResponseHeaders().put(Headers.LOCATION, loc);
+        }
     }
 
     protected void registerNotifications(final SecurityContext securityContext) {
@@ -143,7 +159,7 @@ public abstract class AbstractSamlAuthMech implements AuthenticationMechanism {
     protected void redirectLogout(SamlDeployment deployment, HttpServerExchange exchange) {
         String page = deployment.getLogoutPage();
         sendRedirect(exchange, page);
-        exchange.setResponseCode(302);
+        exchange.setStatusCode(StatusCodes.FOUND);
         exchange.endExchange();
     }
 

@@ -26,4 +26,12 @@ public interface RealmAttributes {
 
     String DISPLAY_NAME_HTML = "displayNameHtml";
 
+    String ACTION_TOKEN_GENERATED_BY_ADMIN_LIFESPAN = "actionTokenGeneratedByAdminLifespan";
+
+    String ACTION_TOKEN_GENERATED_BY_USER_LIFESPAN = "actionTokenGeneratedByUserLifespan";
+
+    // KEYCLOAK-7688 Offline Session Max for Offline Token
+    String OFFLINE_SESSION_MAX_LIFESPAN_ENABLED = "offlineSessionMaxLifespanEnabled";
+
+    String OFFLINE_SESSION_MAX_LIFESPAN = "offlineSessionMaxLifespan";
 }

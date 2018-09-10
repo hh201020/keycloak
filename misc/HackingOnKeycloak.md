@@ -16,25 +16,25 @@ GitHub Repository
 
     git clone https://github.com/<your username>/keycloak.git
     cd keycloak
-    
+
 ### Add a remote ref to upstream for pulling future updates
-    
+
     git remote add upstream https://github.com/keycloak/keycloak.git
-    
+
 ### Pull later updates from upstream
 
     git fetch upstream
     git rebase upstream/master
-    
-    
+
+
 Discuss changes
 ---------------
 
-Before starting work on a new feature or anything besides a minor bug fix join the [Keycloak Dev mailing list](https://lists.jboss.org/mailman/listinfo/keycloak-dev) 
+Before starting work on a new feature or anything besides a minor bug fix join the [Keycloak Dev mailing list](https://lists.jboss.org/mailman/listinfo/keycloak-dev)
 and send a mail about your proposed changes. This is vital as otherwise you may waste days implementing a feature that is later rejected.
 
-Once you have received feedback from the mailing list if there's not one already create a (JIRA issue)[https://issues.jboss.org/browse/KEYCLOAK].
- 
+Once you have received feedback from the mailing list if there's not one already create a [JIRA issue](https://issues.jboss.org/browse/KEYCLOAK).
+
 
 Implement changes
 -----------------
@@ -45,7 +45,7 @@ If your changes requires updates to the database read [Updating Database Schema]
 
 To try your changes out manually you can quickly start Keycloak from within your IDEA or Maven, to find out how to do this
 read [Testsuite](Testsuite.md). It's also important that you add tests to the testsuite for your changes.  
- 
+
 
 Get your changes merged into upstream
 -------------------------------------
@@ -59,11 +59,19 @@ Here's a quick check list for a good pull request (PR):
 * A JIRA associated with your PR (include the JIRA issue number in commit comment)
 * All tests in testsuite pass
 * Do a rebase on upstream master
+* We only accept contributions to the master branch. The exception to this is if the fix is for the latest CR release and Final has not yet been released, in which case you can send the PR to both the corresponding branch and the master branch.
+* PR needs to be accompanied with tests that sufficiently test added/changed functionality
+* Relevant documentation change needs to be submitted to keycloak/keycloak-documentation repository
+* Should a change be requested in a PR that stays without response for 2 weeks, the PR would be closed
 
-Once you're happy with your changes go to GitHub and create a PR.
+Once you're happy with your changes go to GitHub and create a PR to the master branch.
 
 
-Release Keycloak
-----------------
+Development of Wildfly-based features
+-------------------------------------
 
-* [Release Process](ReleaseProcess.md)
+When your changes are developed for Wildfly only, it is rather useful to create a jar-less distro that would retrieve the module jars directly
+from maven artifacts so that you would not to have to replace the module jars manually during development. You can create such a server
+distribution by adding a keycloak.provisioning.xml parameter to the standard maven command for creating distribution:
+
+    mvn clean install -Pdistribution -Dkeycloak.provisioning.xml=server-provisioning-devel.xml

@@ -18,12 +18,16 @@
 package org.keycloak.protocol.oidc;
 
 import org.jboss.resteasy.annotations.cache.NoCache;
+import org.jboss.resteasy.spi.HttpRequest;
 import org.jboss.resteasy.spi.ResteasyProviderFactory;
-import org.keycloak.OAuth2Constants;
+import org.keycloak.common.ClientConnection;
 import org.keycloak.events.EventBuilder;
+import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.jose.jwk.JSONWebKeySet;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.jose.jwk.JWKBuilder;
-import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.keys.RsaKeyMetadata;
+import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.protocol.oidc.endpoints.AuthorizationEndpoint;
@@ -31,12 +35,18 @@ import org.keycloak.protocol.oidc.endpoints.LoginStatusIframeEndpoint;
 import org.keycloak.protocol.oidc.endpoints.LogoutEndpoint;
 import org.keycloak.protocol.oidc.endpoints.TokenEndpoint;
 import org.keycloak.protocol.oidc.endpoints.UserInfoEndpoint;
-import org.keycloak.protocol.oidc.representations.JSONWebKeySet;
-import org.keycloak.services.ServicesLogger;
+import org.keycloak.protocol.oidc.ext.OIDCExtProvider;
+import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.messages.Messages;
+import org.keycloak.services.resources.Cors;
 import org.keycloak.services.resources.RealmsResource;
+import org.keycloak.services.util.CacheControlUtil;
 
 import javax.ws.rs.GET;
+import javax.ws.rs.NotFoundException;
+import javax.ws.rs.OPTIONS;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
@@ -45,6 +55,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
 import javax.ws.rs.core.UriInfo;
+import java.util.List;
 
 /**
  * Resource class for the oauth/openid connect token service
@@ -54,20 +65,21 @@ import javax.ws.rs.core.UriInfo;
  */
 public class OIDCLoginProtocolService {
 
-    protected static final ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
-
     private RealmModel realm;
     private TokenManager tokenManager;
     private EventBuilder event;
-
-    @Context
-    private UriInfo uriInfo;
 
     @Context
     private KeycloakSession session;
 
     @Context
     private HttpHeaders headers;
+
+    @Context
+    private HttpRequest request;
+
+    @Context
+    private ClientConnection clientConnection;
 
     public OIDCLoginProtocolService(RealmModel realm, EventBuilder event) {
         this.realm = realm;
@@ -97,6 +109,16 @@ public class OIDCLoginProtocolService {
     public static UriBuilder tokenUrl(UriBuilder baseUriBuilder) {
         UriBuilder uriBuilder = tokenServiceBaseUrl(baseUriBuilder);
         return uriBuilder.path(OIDCLoginProtocolService.class, "token");
+    }
+
+    public static UriBuilder certsUrl(UriBuilder baseUriBuilder) {
+        UriBuilder uriBuilder = tokenServiceBaseUrl(baseUriBuilder);
+        return uriBuilder.path(OIDCLoginProtocolService.class, "certs");
+    }
+
+    public static UriBuilder userInfoUrl(UriBuilder baseUriBuilder) {
+        UriBuilder uriBuilder = tokenServiceBaseUrl(baseUriBuilder);
+        return uriBuilder.path(OIDCLoginProtocolService.class, "issueUserInfo");
     }
 
     public static UriBuilder tokenIntrospectionUrl(UriBuilder baseUriBuilder) {
@@ -155,19 +177,36 @@ public class OIDCLoginProtocolService {
 
     @Path("login-status-iframe.html")
     public Object getLoginStatusIframe() {
-        LoginStatusIframeEndpoint endpoint = new LoginStatusIframeEndpoint(realm);
+        LoginStatusIframeEndpoint endpoint = new LoginStatusIframeEndpoint();
         ResteasyProviderFactory.getInstance().injectProperties(endpoint);
         return endpoint;
+    }
+
+    @OPTIONS
+    @Path("certs")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getVersionPreflight() {
+        return Cors.add(request, Response.ok()).allowedMethods("GET").preflight().auth().build();
     }
 
     @GET
     @Path("certs")
     @Produces(MediaType.APPLICATION_JSON)
     @NoCache
-    public JSONWebKeySet certs() {
+    public Response certs() {
+        List<RsaKeyMetadata> publicKeys = session.keys().getRsaKeys(realm);
+        JWK[] keys = new JWK[publicKeys.size()];
+
+        int i = 0;
+        for (RsaKeyMetadata k : publicKeys) {
+            keys[i++] = JWKBuilder.create().kid(k.getKid()).rs256(k.getPublicKey());
+        }
+
         JSONWebKeySet keySet = new JSONWebKeySet();
-        keySet.setKeys(new JWK[]{JWKBuilder.create().rs256(realm.getPublicKey())});
-        return keySet;
+        keySet.setKeys(keys);
+
+        Response.ResponseBuilder responseBuilder = Response.ok(keySet).cacheControl(CacheControlUtil.getDefaultCacheControl());
+        return Cors.add(request, responseBuilder).allowedOrigins("*").auth().build();
     }
 
     @Path("userinfo")
@@ -193,6 +232,43 @@ public class OIDCLoginProtocolService {
         } else {
             return forms.setError(error).createCode();
         }
+    }
+
+    /**
+     * For KeycloakInstalled and kcinit login where command line login is delegated to a browser.
+     * This clears login cookies and outputs login success or failure messages.
+     *
+     * @param error
+     * @return
+     */
+    @GET
+    @Path("delegated")
+    public Response kcinitBrowserLoginComplete(@QueryParam("error") boolean error) {
+        AuthenticationManager.expireIdentityCookie(realm, session.getContext().getUri(), clientConnection);
+        AuthenticationManager.expireRememberMeCookie(realm, session.getContext().getUri(), clientConnection);
+        if (error) {
+            LoginFormsProvider forms = session.getProvider(LoginFormsProvider.class);
+            return forms
+                    .setAttribute("messageHeader", forms.getMessage(Messages.DELEGATION_FAILED_HEADER))
+                    .setAttribute(Constants.SKIP_LINK, true).setError(Messages.DELEGATION_FAILED).createInfoPage();
+
+        } else {
+            LoginFormsProvider forms = session.getProvider(LoginFormsProvider.class);
+            return forms
+                    .setAttribute("messageHeader", forms.getMessage(Messages.DELEGATION_COMPLETE_HEADER))
+                    .setAttribute(Constants.SKIP_LINK, true)
+                    .setSuccess(Messages.DELEGATION_COMPLETE).createInfoPage();
+        }
+    }
+
+    @Path("ext/{extension}")
+    public Object resolveExtension(@PathParam("extension") String extension) {
+        OIDCExtProvider provider = session.getProvider(OIDCExtProvider.class, extension);
+        if (provider != null) {
+            provider.setEvent(event);
+            return provider;
+        }
+        throw new NotFoundException();
     }
 
 }

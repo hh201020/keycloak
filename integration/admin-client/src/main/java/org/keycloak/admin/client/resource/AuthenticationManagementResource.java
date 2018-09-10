@@ -24,6 +24,7 @@ import org.keycloak.representations.idm.AuthenticatorConfigInfoRepresentation;
 import org.keycloak.representations.idm.AuthenticatorConfigRepresentation;
 import org.keycloak.representations.idm.ConfigPropertyRepresentation;
 import org.keycloak.representations.idm.RequiredActionProviderRepresentation;
+import org.keycloak.representations.idm.RequiredActionProviderSimpleRepresentation;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -100,7 +101,7 @@ public interface AuthenticationManagementResource {
     @Path("/flows/{flowAlias}/executions")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    Response getExecutions(@PathParam("flowAlias") String flowAlias);
+    List<AuthenticationExecutionInfoRepresentation> getExecutions(@PathParam("flowAlias") String flowAlias);
 
     @Path("/flows/{flowAlias}/executions")
     @PUT
@@ -111,6 +112,11 @@ public interface AuthenticationManagementResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     Response addExecution(AuthenticationExecutionRepresentation model);
+
+    @Path("/executions/{executionId}")
+	@GET
+    @Produces(MediaType.APPLICATION_JSON)
+    AuthenticationExecutionRepresentation getExecution(final @PathParam("executionId") String executionId);
 
     @Path("/executions/{executionId}/raise-priority")
     @POST
@@ -127,22 +133,17 @@ public interface AuthenticationManagementResource {
     @Path("/executions/{executionId}/config")
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
-    Response newExecutionConfig(@PathParam("executionId") String execution, AuthenticatorConfigRepresentation config);
-
-    @Path("/executions/{executionId}/config/{id}")
-    @GET
-    @Produces(MediaType.APPLICATION_JSON)
-    AuthenticatorConfigRepresentation getAuthenticatorConfig(@PathParam("executionId") String execution,@PathParam("id") String id);
+    Response newExecutionConfig(@PathParam("executionId") String executionId, AuthenticatorConfigRepresentation config);
 
     @Path("unregistered-required-actions")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    List<Map<String, String>> getUnregisteredRequiredActions();
+    List<RequiredActionProviderSimpleRepresentation> getUnregisteredRequiredActions();
 
     @Path("register-required-action")
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
-    void registereRequiredAction(Map<String, String> data);
+    void registerRequiredAction(RequiredActionProviderSimpleRepresentation action);
 
     @Path("required-actions")
     @GET
@@ -161,7 +162,15 @@ public interface AuthenticationManagementResource {
 
     @Path("required-actions/{alias}")
     @DELETE
-    void updateRequiredAction(@PathParam("alias") String alias);
+    void removeRequiredAction(@PathParam("alias") String alias);
+
+    @Path("required-actions/{alias}/raise-priority")
+    @POST
+    void raiseRequiredActionPriority(@PathParam("alias") String alias);
+
+    @Path("required-actions/{alias}/lower-priority")
+    @POST
+    void lowerRequiredActionPriority(@PathParam("alias") String alias);
 
     @Path("config-description/{providerId}")
     @GET
@@ -172,11 +181,6 @@ public interface AuthenticationManagementResource {
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     Map<String, List<ConfigPropertyRepresentation>> getPerClientConfigDescription();
-
-    @Path("config")
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    Response createAuthenticatorConfig(AuthenticatorConfigRepresentation config);
 
     @Path("config/{id}")
     @GET

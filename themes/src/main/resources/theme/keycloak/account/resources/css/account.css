@@ -53,6 +53,10 @@ header .navbar {
     padding: 0 30px;
 }
 
+.margin-bottom {
+    margin-bottom: 10px;
+}
+
 /* Sidebar */
 
 .bs-sidebar {
@@ -204,17 +208,8 @@ ol li {
 
 ol li img {
     margin-top: 15px;
-    width: 180px;
     margin-bottom: 5px;
     border: 1px solid #eee;
-}
-
-ol li span {
-    bottom: 80px;
-    left: 200px;
-    position: absolute;
-    font-family: courier, ​monospace;
-    font-size: 13px;
 }
 
 hr + .form-horizontal {
@@ -271,4 +266,12 @@ hr + .form-horizontal {
 }
 .kc-dropdown:hover ul{
     display:block;
+}
+
+
+#kc-totp-secret-key {
+    border: 1px solid #eee;
+    font-size: 16px;
+    padding: 10px;
+    margin: 50px 0;
 }

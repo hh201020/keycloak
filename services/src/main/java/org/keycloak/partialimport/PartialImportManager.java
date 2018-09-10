@@ -17,14 +17,18 @@
 
 package org.keycloak.partialimport;
 
-import java.util.ArrayList;
-import java.util.List;
-import javax.ws.rs.core.Response;
 import org.keycloak.events.admin.OperationType;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.ModelDuplicateException;
+import org.keycloak.models.ModelException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.representations.idm.PartialImportRepresentation;
+import org.keycloak.services.ErrorResponse;
 import org.keycloak.services.resources.admin.AdminEventBuilder;
+
+import javax.ws.rs.core.Response;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * This class manages the PartialImport handlers.
@@ -50,6 +54,7 @@ public class PartialImportManager {
         partialImports.add(new ClientsPartialImport());
         partialImports.add(new RolesPartialImport());
         partialImports.add(new IdentityProvidersPartialImport());
+        partialImports.add(new GroupsPartialImport());
         partialImports.add(new UsersPartialImport());
     }
 
@@ -61,7 +66,7 @@ public class PartialImportManager {
             try {
                 partialImport.prepare(rep, realm, session);
             } catch (ErrorResponseException error) {
-                if (session.getTransaction().isActive()) session.getTransaction().setRollbackOnly();
+                if (session.getTransactionManager().isActive()) session.getTransactionManager().setRollbackOnly();
                 return error.getResponse();
             }
         }
@@ -71,33 +76,37 @@ public class PartialImportManager {
                 partialImport.removeOverwrites(realm, session);
                 results.addAllResults(partialImport.doImport(rep, realm, session));
             } catch (ErrorResponseException error) {
-                if (session.getTransaction().isActive()) session.getTransaction().setRollbackOnly();
+                if (session.getTransactionManager().isActive()) session.getTransactionManager().setRollbackOnly();
                 return error.getResponse();
             }
         }
 
         for (PartialImportResult result : results.getResults()) {
             switch (result.getAction()) {
-                case ADDED : addedEvent(result); break;
-                case OVERWRITTEN: overwrittenEvent(result); break;
+                case ADDED : fireCreatedEvent(result); break;
+                case OVERWRITTEN: fireUpdateEvent(result); break;
             }
         }
 
-        if (session.getTransaction().isActive()) {
-            session.getTransaction().commit();
+        if (session.getTransactionManager().isActive()) {
+            try {
+                session.getTransactionManager().commit();
+            } catch (ModelException e) {
+                return ErrorResponse.exists(e.getLocalizedMessage());
+            }
         }
 
         return Response.ok(results).build();
     }
 
-    private void addedEvent(PartialImportResult result) {
+    private void fireCreatedEvent(PartialImportResult result) {
         adminEvent.operation(OperationType.CREATE)
                   .resourcePath(result.getResourceType().getPath(), result.getId())
                   .representation(result.getRepresentation())
                   .success();
     };
 
-    private void overwrittenEvent(PartialImportResult result) {
+    private void fireUpdateEvent(PartialImportResult result) {
         adminEvent.operation(OperationType.UPDATE)
                   .resourcePath(result.getResourceType().getPath(), result.getId())
                   .representation(result.getRepresentation())

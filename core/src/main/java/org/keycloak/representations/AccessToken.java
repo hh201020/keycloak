@@ -19,8 +19,10 @@ package org.keycloak.representations;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.keycloak.representations.idm.authorization.Permission;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -81,8 +83,34 @@ public class AccessToken extends IDToken {
         }
     }
 
-    @JsonProperty("client_session")
-    protected String clientSession;
+    public static class Authorization implements Serializable {
+
+        @JsonProperty("permissions")
+        private Collection<Permission> permissions;
+
+        public Collection<Permission> getPermissions() {
+            return permissions;
+        }
+
+        public void setPermissions(Collection<Permission> permissions) {
+            this.permissions = permissions;
+        }
+    }
+
+    // KEYCLOAK-6771 Certificate Bound Token
+    // https://tools.ietf.org/html/draft-ietf-oauth-mtls-08#section-3.1
+    public static class CertConf {
+        @JsonProperty("x5t#S256")
+        protected String certThumbprint;
+
+        public String getCertThumbprint() {
+            return certThumbprint;
+        }
+
+        public void setCertThumbprint(String certThumbprint) {
+            this.certThumbprint = certThumbprint;
+        }
+    }
 
     @JsonProperty("trusted-certs")
     protected Set<String> trustedCertificates;
@@ -95,6 +123,15 @@ public class AccessToken extends IDToken {
 
     @JsonProperty("resource_access")
     protected Map<String, Access> resourceAccess = new HashMap<String, Access>();
+
+    @JsonProperty("authorization")
+    protected Authorization authorization;
+
+    @JsonProperty("cnf")
+    protected CertConf certConf;
+
+    @JsonProperty("scope")
+    protected String scope;
 
     public Map<String, Access> getResourceAccess() {
         return resourceAccess;
@@ -137,21 +174,12 @@ public class AccessToken extends IDToken {
         return resourceAccess.get(resource);
     }
 
-    public String getClientSession() {
-        return clientSession;
-    }
-
     public Access addAccess(String service) {
         Access access = resourceAccess.get(service);
         if (access != null) return access;
         access = new Access();
         resourceAccess.put(service, access);
         return access;
-    }
-
-    public AccessToken clientSession(String session) {
-        this.clientSession = session;
-        return this;
     }
 
     @Override
@@ -219,5 +247,27 @@ public class AccessToken extends IDToken {
         return (AccessToken)super.issuedFor(issuedFor);
     }
 
+    public Authorization getAuthorization() {
+        return authorization;
+    }
 
+    public void setAuthorization(Authorization authorization) {
+        this.authorization = authorization;
+    }
+    
+    public CertConf getCertConf() {
+        return certConf;
+    }
+
+    public void setCertConf(CertConf certConf) {
+        this.certConf = certConf;
+    }
+
+    public String getScope() {
+        return scope;
+    }
+
+    public void setScope(String scope) {
+        this.scope = scope;
+    }
 }

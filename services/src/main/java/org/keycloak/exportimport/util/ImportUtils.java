@@ -25,18 +25,21 @@ import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.exportimport.ExportImportConfig;
 import org.keycloak.exportimport.Strategy;
-import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RealmProvider;
-import org.keycloak.models.utils.RealmImporter;
 import org.keycloak.models.utils.RepresentationToModel;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.keycloak.services.managers.RealmManager;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -46,16 +49,30 @@ public class ImportUtils {
     private static final Logger logger = Logger.getLogger(ImportUtils.class);
 
     public static void importRealms(KeycloakSession session, Collection<RealmRepresentation> realms, Strategy strategy) {
+        boolean masterImported = false;
+
         // Import admin realm first
         for (RealmRepresentation realm : realms) {
             if (Config.getAdminRealm().equals(realm.getRealm())) {
-                importRealm(session, realm, strategy);
+                if (importRealm(session, realm, strategy, false)) {
+                    masterImported = true;
+                }
             }
         }
 
         for (RealmRepresentation realm : realms) {
             if (!Config.getAdminRealm().equals(realm.getRealm())) {
-                importRealm(session, realm, strategy);
+                importRealm(session, realm, strategy, false);
+            }
+        }
+
+        // If master was imported, we may need to re-create realm management clients
+        if (masterImported) {
+            for (RealmModel realm : session.realms().getRealms()) {
+                if (realm.getMasterAdminClient() == null) {
+                    logger.infof("Re-created management client in master realm for realm '%s'", realm.getName());
+                    new RealmManager(session).setupMasterAdminManagement(realm);
+                }
             }
         }
     }
@@ -66,9 +83,10 @@ public class ImportUtils {
      * @param session
      * @param rep
      * @param strategy specifies whether to overwrite or ignore existing realm or user entries
+     * @param skipUserDependent If true, then import of any models, which needs users already imported in DB, will be skipped. For example authorization
      * @return newly imported realm (or existing realm if ignoreExisting is true and realm of this name already exists)
      */
-    public static void importRealm(KeycloakSession session, RealmRepresentation rep, Strategy strategy) {
+    public static boolean importRealm(KeycloakSession session, RealmRepresentation rep, Strategy strategy, boolean skipUserDependent) {
         String realmName = rep.getRealm();
         RealmProvider model = session.realms();
         RealmModel realm = model.getRealmByName(realmName);
@@ -76,7 +94,7 @@ public class ImportUtils {
         if (realm != null) {
             if (strategy == Strategy.IGNORE_EXISTING) {
                 logger.infof("Realm '%s' already exists. Import skipped", realmName);
-                return;
+                return false;
             } else {
                 logger.infof("Realm '%s' already exists. Removing it before import", realmName);
                 if (Config.getAdminRealm().equals(realm.getId())) {
@@ -90,14 +108,15 @@ public class ImportUtils {
             }
         }
 
-        RealmImporter realmManager = session.getContext().getRealmManager();
-        realm = realmManager.importRealm(rep);
+        RealmManager realmManager = new RealmManager(session);
+        realmManager.setContextPath(session.getContext().getContextPath());
+        realmManager.importRealm(rep, skipUserDependent);
 
         if (System.getProperty(ExportImportConfig.ACTION) != null) {
             logger.infof("Realm '%s' imported", realmName);
         }
         
-        return;
+        return true;
     }
 
     /**
@@ -197,11 +216,62 @@ public class ImportUtils {
         }
     }
 
+    // Assuming that it's invoked inside transaction
+    public static void importFederatedUsersFromStream(KeycloakSession session, String realmName, ObjectMapper mapper, InputStream is) throws IOException {
+        RealmProvider model = session.realms();
+        JsonFactory factory = mapper.getJsonFactory();
+        JsonParser parser = factory.createJsonParser(is);
+        try {
+            parser.nextToken();
+
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                if ("realm".equals(parser.getText())) {
+                    parser.nextToken();
+                    String currRealmName = parser.getText();
+                    if (!currRealmName.equals(realmName)) {
+                        throw new IllegalStateException("Trying to import users into invalid realm. Realm name: " + realmName + ", Expected realm name: " + currRealmName);
+                    }
+                } else if ("federatedUsers".equals(parser.getText())) {
+                    parser.nextToken();
+
+                    if (parser.getCurrentToken() == JsonToken.START_ARRAY) {
+                        parser.nextToken();
+                    }
+
+                    // TODO: support for more transactions per single users file (if needed)
+                    List<UserRepresentation> userReps = new ArrayList<UserRepresentation>();
+                    while (parser.getCurrentToken() == JsonToken.START_OBJECT) {
+                        UserRepresentation user = parser.readValueAs(UserRepresentation.class);
+                        userReps.add(user);
+                        parser.nextToken();
+                    }
+
+                    importFederatedUsers(session, model, realmName, userReps);
+
+                    if (parser.getCurrentToken() == JsonToken.END_ARRAY) {
+                        parser.nextToken();
+                    }
+                }
+            }
+        } finally {
+            parser.close();
+        }
+    }
+
     private static void importUsers(KeycloakSession session, RealmProvider model, String realmName, List<UserRepresentation> userReps) {
         RealmModel realm = model.getRealmByName(realmName);
         for (UserRepresentation user : userReps) {
             RepresentationToModel.createUser(session, realm, user);
         }
     }
+
+
+    private static void importFederatedUsers(KeycloakSession session, RealmProvider model, String realmName, List<UserRepresentation> userReps) {
+        RealmModel realm = model.getRealmByName(realmName);
+        for (UserRepresentation user : userReps) {
+            RepresentationToModel.importFederatedUser(session, realm, user);
+        }
+    }
+
 
 }

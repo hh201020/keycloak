@@ -17,6 +17,8 @@
 
 package org.keycloak.representations.idm;
 
+import org.keycloak.representations.idm.authorization.ResourceServerRepresentation;
+
 import java.util.List;
 import java.util.Map;
 
@@ -47,20 +49,34 @@ public class ClientRepresentation {
     protected Boolean implicitFlowEnabled;
     protected Boolean directAccessGrantsEnabled;
     protected Boolean serviceAccountsEnabled;
+    protected Boolean authorizationServicesEnabled;
     @Deprecated
     protected Boolean directGrantsOnly;
     protected Boolean publicClient;
     protected Boolean frontchannelLogout;
     protected String protocol;
     protected Map<String, String> attributes;
+    protected Map<String, String> authenticationFlowBindingOverrides;
     protected Boolean fullScopeAllowed;
     protected Integer nodeReRegistrationTimeout;
     protected Map<String, Integer> registeredNodes;
     protected List<ProtocolMapperRepresentation> protocolMappers;
+
+    @Deprecated
     protected String clientTemplate;
+    @Deprecated
     private Boolean useTemplateConfig;
+    @Deprecated
     private Boolean useTemplateScope;
+    @Deprecated
     private Boolean useTemplateMappers;
+
+    protected List<String> defaultClientScopes;
+    protected List<String> optionalClientScopes;
+
+    private ResourceServerRepresentation authorizationSettings;
+    private Map<String, Boolean> access;
+    protected String origin;
 
 
     public String getId() {
@@ -239,6 +255,17 @@ public class ClientRepresentation {
         this.serviceAccountsEnabled = serviceAccountsEnabled;
     }
 
+    public Boolean getAuthorizationServicesEnabled() {
+        if (authorizationSettings != null) {
+            return true;
+        }
+        return authorizationServicesEnabled;
+    }
+
+    public void setAuthorizationServicesEnabled(Boolean authorizationServicesEnabled) {
+        this.authorizationServicesEnabled = authorizationServicesEnabled;
+    }
+
     @Deprecated
     public Boolean isDirectGrantsOnly() {
         return directGrantsOnly;
@@ -280,6 +307,14 @@ public class ClientRepresentation {
         this.attributes = attributes;
     }
 
+    public Map<String, String> getAuthenticationFlowBindingOverrides() {
+        return authenticationFlowBindingOverrides;
+    }
+
+    public void setAuthenticationFlowBindingOverrides(Map<String, String> authenticationFlowBindingOverrides) {
+        this.authenticationFlowBindingOverrides = authenticationFlowBindingOverrides;
+    }
+
     public Integer getNodeReRegistrationTimeout() {
         return nodeReRegistrationTimeout;
     }
@@ -312,36 +347,70 @@ public class ClientRepresentation {
         this.protocolMappers = protocolMappers;
     }
 
+    @Deprecated
     public String getClientTemplate() {
         return clientTemplate;
     }
 
-    public void setClientTemplate(String clientTemplate) {
-        this.clientTemplate = clientTemplate;
-    }
-
+    @Deprecated
     public Boolean isUseTemplateConfig() {
         return useTemplateConfig;
     }
 
-    public void setUseTemplateConfig(Boolean useTemplateConfig) {
-        this.useTemplateConfig = useTemplateConfig;
-    }
-
+    @Deprecated
     public Boolean isUseTemplateScope() {
         return useTemplateScope;
     }
 
-    public void setUseTemplateScope(Boolean useTemplateScope) {
-        this.useTemplateScope = useTemplateScope;
-    }
-
+    @Deprecated
     public Boolean isUseTemplateMappers() {
         return useTemplateMappers;
     }
 
-    public void setUseTemplateMappers(Boolean useTemplateMappers) {
-        this.useTemplateMappers = useTemplateMappers;
+    public List<String> getDefaultClientScopes() {
+        return defaultClientScopes;
+    }
+
+    public void setDefaultClientScopes(List<String> defaultClientScopes) {
+        this.defaultClientScopes = defaultClientScopes;
+    }
+
+    public List<String> getOptionalClientScopes() {
+        return optionalClientScopes;
+    }
+
+    public void setOptionalClientScopes(List<String> optionalClientScopes) {
+        this.optionalClientScopes = optionalClientScopes;
+    }
+
+    public ResourceServerRepresentation getAuthorizationSettings() {
+        return authorizationSettings;
+    }
+
+    public void setAuthorizationSettings(ResourceServerRepresentation authorizationSettings) {
+        this.authorizationSettings = authorizationSettings;
+    }
+
+    public Map<String, Boolean> getAccess() {
+        return access;
+    }
+
+    public void setAccess(Map<String, Boolean> access) {
+        this.access = access;
+    }
+
+
+    /**
+     * Returns id of ClientStorageProvider that loaded this user
+     *
+     * @return NULL if user stored locally
+     */
+    public String getOrigin() {
+        return origin;
+    }
+
+    public void setOrigin(String origin) {
+        this.origin = origin;
     }
 
 }

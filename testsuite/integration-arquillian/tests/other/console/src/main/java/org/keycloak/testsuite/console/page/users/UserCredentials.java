@@ -1,10 +1,10 @@
 package org.keycloak.testsuite.console.page.users;
 
 import org.keycloak.testsuite.console.page.fragment.OnOffSwitch;
-import static org.keycloak.testsuite.page.Form.setInputValue;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
-import static org.keycloak.testsuite.util.WaitUtils.*;
+
+import static org.keycloak.testsuite.util.UIUtils.setTextInputValue;
 
 /**
  *
@@ -17,10 +17,10 @@ public class UserCredentials extends User {
         return super.getUriFragment() + "/user-credentials";
     }
 
-    @FindBy(id = "password")
+    @FindBy(id = "newPas")
     private WebElement newPasswordInput;
 
-    @FindBy(id = "confirmPassword")
+    @FindBy(id = "confirmPas")
     private WebElement confirmPasswordInput;
 
     @FindBy(xpath = ".//div[@class='onoffswitch' and ./input[@id='temporaryPassword']]")
@@ -30,11 +30,11 @@ public class UserCredentials extends User {
     private WebElement resetPasswordButton;
 
     public void setNewPassword(String newPassword) {
-        setInputValue(newPasswordInput, newPassword);
+        setTextInputValue(newPasswordInput, newPassword);
     }
 
     public void setConfirmPassword(String confirmPassword) {
-        setInputValue(confirmPasswordInput, confirmPassword);
+        setTextInputValue(confirmPasswordInput, confirmPassword);
     }
 
     public void setTemporary(boolean temporary) {
@@ -42,7 +42,6 @@ public class UserCredentials extends User {
     }
 
     public void clickResetPasswordAndConfirm() {
-        waitUntilElement(resetPasswordButton);
         resetPasswordButton.click();
         modalDialog.ok();
     }

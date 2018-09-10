@@ -18,7 +18,6 @@
 package org.keycloak.models;
 
 import org.keycloak.common.ClientConnection;
-import org.keycloak.models.utils.RealmImporter;
 
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.UriInfo;
@@ -34,7 +33,7 @@ public interface KeycloakContext {
 
     String getContextPath();
 
-    UriInfo getUri();
+    KeycloakUriInfo getUri();
 
     HttpHeaders getRequestHeaders();
 
@@ -51,8 +50,6 @@ public interface KeycloakContext {
     ClientConnection getConnection();
 
     void setConnection(ClientConnection connection);
-
-    RealmImporter getRealmManager();
 
     Locale resolveLocale(UserModel user);
 

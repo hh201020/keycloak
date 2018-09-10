@@ -3,7 +3,7 @@
 var module = angular.module('keycloak.services', [ 'ngResource', 'ngRoute' ]);
 
 module.service('Dialog', function($modal) {
-	var dialog = {};
+    var dialog = {};
 
     var openDialog = function(title, message, btns, template) {
         var controller = function($scope, $modalInstance, title, message, btns) {
@@ -36,15 +36,15 @@ module.service('Dialog', function($modal) {
         }).result;
     }
 
-	var escapeHtml = function(str) {
-		var div = document.createElement('div');
-		div.appendChild(document.createTextNode(str));
-		return div.innerHTML;
-	};
+    var escapeHtml = function(str) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    };
 
-	dialog.confirmDelete = function(name, type, success) {
-		var title = 'Delete ' + escapeHtml(type.charAt(0).toUpperCase() + type.slice(1));
-		var msg = 'Are you sure you want to permanently delete the ' + type + ' ' + name + '?';
+    dialog.confirmDelete = function(name, type, success) {
+        var title = 'Delete ' + escapeHtml(type.charAt(0).toUpperCase() + type.slice(1));
+        var msg = 'Are you sure you want to permanently delete the ' + type + ' ' + name + '?';
         var btns = {
             ok: {
                 label: 'Delete',
@@ -57,7 +57,7 @@ module.service('Dialog', function($modal) {
         }
 
         openDialog(title, msg, btns, '/templates/kc-modal.html').then(success);
-	}
+    }
 
     dialog.confirmGenerateKeys = function(name, type, success) {
         var title = 'Generate new keys for realm';
@@ -138,10 +138,10 @@ module.service('CopyDialog', function($modal) {
 });
 
 module.factory('Notifications', function($rootScope, $timeout) {
-	// time (in ms) the notifications are shown
-	var delay = 5000;
+    // time (in ms) the notifications are shown
+    var delay = 5000;
 
-	var notifications = {};
+    var notifications = {};
     notifications.current = { display: false };
     notifications.current.remove = function() {
         if (notifications.scheduled) {
@@ -157,7 +157,9 @@ module.factory('Notifications', function($rootScope, $timeout) {
 
     $rootScope.notification = notifications.current;
 
-	notifications.message = function(type, header, message) {
+    notifications.message = function(type, header, message) {
+        notifications.current.remove();
+
         notifications.current.type = type;
         notifications.current.header = header;
         notifications.current.message = message;
@@ -168,39 +170,109 @@ module.factory('Notifications', function($rootScope, $timeout) {
         }, delay);
 
         console.debug("Added message");
-	}
+    }
 
-	notifications.info = function(message) {
-		notifications.message("info", "Info!", message);
-	};
+    notifications.info = function(message) {
+        notifications.message("info", "Info!", message);
+    };
 
-	notifications.success = function(message) {
-		notifications.message("success", "Success!", message);
-	};
+    notifications.success = function(message) {
+        notifications.message("success", "Success!", message);
+    };
 
-	notifications.error = function(message) {
-		notifications.message("danger", "Error!", message);
-	};
+    notifications.error = function(message) {
+        notifications.message("danger", "Error!", message);
+    };
 
-	notifications.warn = function(message) {
-		notifications.message("warning", "Warning!", message);
-	};
+    notifications.warn = function(message) {
+        notifications.message("warning", "Warning!", message);
+    };
 
-	return notifications;
+    return notifications;
+});
+
+
+module.factory('ComponentUtils', function() {
+
+    var utils = {};
+
+    utils.addLastEmptyValueToMultivaluedLists = function(properties, config) {
+        if (!properties) {
+            return;
+        }
+
+        for (var i=0 ; i<properties.length ; i++) {
+            var prop = properties[i];
+            if (prop.type === 'MultivaluedString') {
+                var configProperty = config[prop.name];
+
+                if (configProperty == null) {
+                    configProperty = [];
+                    config[prop.name] = configProperty;
+                }
+
+                if (configProperty.length == 0 || configProperty[configProperty.length - 1].length > 0) {
+                    configProperty.push('');
+                }
+            }
+        }
+    }
+
+
+    utils.removeLastEmptyValue = function(componentConfig) {
+
+        for (var configPropertyName in componentConfig) {
+            var configVal = componentConfig[configPropertyName];
+            if (configVal && configVal.length > 0) {
+                var lastVal = configVal[configVal.length - 1];
+                if (lastVal === '') {
+                    console.log('Remove empty value from config property: ' + configPropertyName);
+                    configVal.splice(configVal.length - 1, 1);
+                }
+            }
+        }
+    }
+    
+    // Allows you to use ui-select2 with <input> tag.
+    // In HTML you will then use property.mvOptions like this:
+    // <input ui-select2="prop.mvOptions" ng-model="...
+    utils.addMvOptionsToMultivaluedLists = function(properties) {
+        if (!properties) return;
+        
+        for (var i=0 ; i<properties.length ; i++) {
+            var prop = properties[i];
+            if (prop.type !== 'MultivaluedList') continue;
+            
+            prop.mvOptions = {
+                'multiple' : true,
+                'simple_tags' : true,
+                'tags' : angular.copy(prop.options)
+            }
+        }
+        
+    }
+
+    return utils;
 });
 
 module.factory('Realm', function($resource) {
-	return $resource(authUrl + '/admin/realms/:id', {
-		id : '@realm'
-	}, {
-		update : {
-			method : 'PUT'
-		},
+    return $resource(authUrl + '/admin/realms/:id', {
+        id : '@realm'
+    }, {
+        update : {
+            method : 'PUT'
+        },
         create : {
             method : 'POST',
             params : { id : ''}
         }
 
+    });
+});
+
+module.factory('RealmKeys', function($resource) {
+    return $resource(authUrl + '/admin/realms/:id/keys', {
+        id : '@realm'
     });
 });
 
@@ -227,15 +299,15 @@ module.factory('RealmAdminEvents', function($resource) {
 });
 
 module.factory('BruteForce', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/attack-detection/brute-force/usernames', {
+    return $resource(authUrl + '/admin/realms/:realm/attack-detection/brute-force/users', {
         realm : '@realm'
     });
 });
 
 module.factory('BruteForceUser', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/attack-detection/brute-force/usernames/:username', {
+    return $resource(authUrl + '/admin/realms/:realm/attack-detection/brute-force/users/:userId', {
         realm : '@realm',
-        username : '@username'
+        userId : '@userId'
     });
 });
 
@@ -251,6 +323,20 @@ module.factory('RequiredActions', function($resource) {
     });
 });
 
+module.factory('RequiredActionRaisePriority', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/authentication/required-actions/:alias/raise-priority', {
+        realm : '@realm',
+        alias : '@alias'
+    });
+});
+
+module.factory('RequiredActionLowerPriority', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/authentication/required-actions/:alias/lower-priority', {
+        realm : '@realm',
+        alias : '@alias'
+    });
+});
+
 module.factory('UnregisteredRequiredActions', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/authentication/unregistered-required-actions', {
         realm : '@realm'
@@ -263,16 +349,71 @@ module.factory('RegisterRequiredAction', function($resource) {
     });
 });
 
-module.factory('RealmLDAPConnectionTester', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/testLDAPConnection');
+module.factory('RealmLDAPConnectionTester', function($resource, $httpParamSerializer) {
+    return $resource(authUrl + '/admin/realms/:realm/testLDAPConnection', {
+        realm : '@realm'
+    }, {
+        save: {
+            method: 'POST',
+            headers : { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            transformRequest: function (data) {
+                return $httpParamSerializer(data)
+            }
+        }
+    });
+});
+
+module.factory('RealmSMTPConnectionTester', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/testSMTPConnection/:config', {
+        realm : '@realm',
+        config : '@config'
+    }, {
+        send: {
+            method: 'POST'
+        }
+    });
 });
 
 module.service('ServerInfo', function($resource, $q, $http) {
     var info = {};
     var delay = $q.defer();
 
-    $http.get(authUrl + '/admin/serverinfo').success(function(data) {
-        info = data;
+    function copyInfo(data, info) {
+        angular.copy(data, info);
+
+        info.listProviderIds = function(spi) {
+            var providers = info.providers[spi].providers;
+            var ids = Object.keys(providers);
+            ids.sort(function(a, b) {
+                var s1;
+                var s2;
+
+                if (providers[a].order != providers[b].order) {
+                    s1 = providers[b].order;
+                    s2 = providers[a].order;
+                } else {
+                    s1 = a;
+                    s2 = b;
+                }
+
+                if (s1 < s2) {
+                    return -1;
+                } else if (s1 > s2) {
+                    return 1;
+                } else {
+                    return 0;
+                }
+            });
+            return ids;
+        }
+
+        info.featureEnabled = function(provider) {
+            return info.profileInfo.disabledFeatures.indexOf(provider) == -1;
+        }
+    }
+
+    $http.get(authUrl + '/admin/serverinfo').then(function(response) {
+        copyInfo(response.data, info);
         delay.resolve(info);
     });
 
@@ -281,8 +422,8 @@ module.service('ServerInfo', function($resource, $q, $http) {
             return info;
         },
         reload: function() {
-            $http.get(authUrl + '/admin/serverinfo').success(function(data) {
-                angular.copy(data, info);
+            $http.get(authUrl + '/admin/serverinfo').then(function(response) {
+                copyInfo(response.data, info);
             });
         },
         promise: delay.promise
@@ -296,7 +437,6 @@ module.factory('ClientInitialAccess', function($resource) {
     });
 });
 
-
 module.factory('ClientProtocolMapper', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/clients/:client/protocol-mappers/models/:id', {
         realm : '@realm',
@@ -309,10 +449,10 @@ module.factory('ClientProtocolMapper', function($resource) {
     });
 });
 
-module.factory('ClientTemplateProtocolMapper', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template/protocol-mappers/models/:id', {
+module.factory('ClientScopeProtocolMapper', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope/protocol-mappers/models/:id', {
         realm : '@realm',
-        template: '@template',
+        clientScope: '@clientScope',
         id : "@id"
     }, {
         update : {
@@ -332,58 +472,32 @@ module.factory('User', function($resource) {
     });
 });
 
-module.factory('UserFederationInstances', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/user-federation/instances/:instance', {
-        realm : '@realm',
-        instance : '@instance'
-    },  {
-        update : {
-            method : 'PUT'
-        }
-    });
+module.service('UserSearchState', function() {
+    this.isFirstSearch = true;
+    this.query = {
+        max : 20,
+        first : 0
+    };
 });
 
-module.factory('UserFederationProviders', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/user-federation/providers/:provider', {
-        realm : '@realm',
-        provider : "@provider"
-    });
+// Service tracks the last flow selected in Authentication-->Flows tab
+module.service('LastFlowSelected', function() {
+    this.alias = null;
 });
 
-module.factory('UserFederationSync', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/user-federation/instances/:provider/sync');
+module.service('RealmRoleRemover', function() {
+   this.remove = function (role, realm, Dialog, $location, Notifications) {
+        Dialog.confirmDelete(role.name, 'role', function () {
+            role.$remove({
+                realm: realm.realm,
+                role: role.id
+            }, function () {
+                $location.url("/realms/" + realm.realm + "/roles");
+                Notifications.success("The role has been deleted.");
+            });
+        });
+    };
 });
-
-module.factory('UserFederationMapperTypes', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/user-federation/instances/:provider/mapper-types', {
-        realm : '@realm',
-        provider : '@provider'
-    });
-});
-
-module.factory('UserFederationMappers', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/user-federation/instances/:provider/mappers', {
-        realm : '@realm',
-        provider : '@provider'
-    });
-});
-
-module.factory('UserFederationMapper', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/user-federation/instances/:provider/mappers/:mapperId', {
-        realm : '@realm',
-        provider : '@provider',
-        mapperId: '@mapperId'
-    }, {
-        update: {
-            method : 'PUT'
-        }
-    });
-});
-
-module.factory('UserFederationMapperSync', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/user-federation/instances/:provider/mappers/:mapperId/sync');
-});
-
 
 module.factory('UserSessionStats', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/users/:user/session-stats', {
@@ -469,13 +583,23 @@ module.factory('UserCredentials', function($resource) {
         }
     }).update;
 
+    credentials.disableCredentialTypes = $resource(authUrl + '/admin/realms/:realm/users/:userId/disable-credential-types', {
+        realm : '@realm',
+        userId : '@userId'
+    }, {
+        update : {
+            method : 'PUT'
+        }
+    }).update;
+
     return credentials;
 });
 
 module.factory('UserExecuteActionsEmail', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/users/:userId/execute-actions-email', {
         realm : '@realm',
-        userId : '@userId'
+        userId : '@userId',
+        lifespan : '@lifespan',
     }, {
         update : {
             method : 'PUT'
@@ -607,6 +731,12 @@ module.factory('RealmClearRealmCache', function($resource) {
     });
 });
 
+module.factory('RealmClearKeysCache', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/clear-keys-cache', {
+        realm : '@realm'
+    });
+});
+
 module.factory('RealmSessionStats', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/session-stats', {
         realm : '@realm'
@@ -704,67 +834,69 @@ function roleControl($scope, realm, role, roles, clients,
     $scope.addRealmRole = function() {
         $scope.compositeSwitchDisabled=true;
         $http.post(authUrl + '/admin/realms/' + realm.realm + '/roles-by-id/' + role.id + '/composites',
-                $scope.selectedRealmRoles).success(function() {
-                for (var i = 0; i < $scope.selectedRealmRoles.length; i++) {
-                    var role = $scope.selectedRealmRoles[i];
-                    var idx = $scope.realmRoles.indexOf($scope.selectedRealmRoles[i]);
-                    if (idx != -1) {
-                        $scope.realmRoles.splice(idx, 1);
-                        $scope.realmMappings.push(role);
-                    }
+            $scope.selectedRealmRoles).then(function() {
+            for (var i = 0; i < $scope.selectedRealmRoles.length; i++) {
+                var role = $scope.selectedRealmRoles[i];
+                var idx = $scope.realmRoles.indexOf($scope.selectedRealmRoles[i]);
+                if (idx != -1) {
+                    $scope.realmRoles.splice(idx, 1);
+                    $scope.realmMappings.push(role);
                 }
-                $scope.selectedRealmRoles = [];
-                Notifications.success("Role added to composite.");
-            });
+            }
+            $scope.selectedRealmRoles = [];
+            Notifications.success("Role added to composite.");
+        });
     };
 
     $scope.deleteRealmRole = function() {
         $scope.compositeSwitchDisabled=true;
         $http.delete(authUrl + '/admin/realms/' + realm.realm + '/roles-by-id/' + role.id + '/composites',
-            {data : $scope.selectedRealmMappings, headers : {"content-type" : "application/json"}}).success(function() {
-                for (var i = 0; i < $scope.selectedRealmMappings.length; i++) {
-                    var role = $scope.selectedRealmMappings[i];
-                    var idx = $scope.realmMappings.indexOf($scope.selectedRealmMappings[i]);
-                    if (idx != -1) {
-                        $scope.realmMappings.splice(idx, 1);
-                        $scope.realmRoles.push(role);
-                    }
+            {data : $scope.selectedRealmMappings, headers : {"content-type" : "application/json"}}).then(function() {
+            for (var i = 0; i < $scope.selectedRealmMappings.length; i++) {
+                var role = $scope.selectedRealmMappings[i];
+                var idx = $scope.realmMappings.indexOf($scope.selectedRealmMappings[i]);
+                if (idx != -1) {
+                    $scope.realmMappings.splice(idx, 1);
+                    $scope.realmRoles.push(role);
                 }
-                $scope.selectedRealmMappings = [];
-                Notifications.success("Role removed from composite.");
-            });
+            }
+            $scope.selectedRealmMappings = [];
+            Notifications.success("Role removed from composite.");
+        });
     };
 
     $scope.addClientRole = function() {
         $scope.compositeSwitchDisabled=true;
         $http.post(authUrl + '/admin/realms/' + realm.realm + '/roles-by-id/' + role.id + '/composites',
-                $scope.selectedClientRoles).success(function() {
-                for (var i = 0; i < $scope.selectedClientRoles.length; i++) {
-                    var role = $scope.selectedClientRoles[i];
-                    var idx = $scope.clientRoles.indexOf($scope.selectedClientRoles[i]);
-                    if (idx != -1) {
-                        $scope.clientRoles.splice(idx, 1);
-                        $scope.clientMappings.push(role);
-                    }
+            $scope.selectedClientRoles).then(function() {
+            for (var i = 0; i < $scope.selectedClientRoles.length; i++) {
+                var role = $scope.selectedClientRoles[i];
+                var idx = $scope.clientRoles.indexOf($scope.selectedClientRoles[i]);
+                if (idx != -1) {
+                    $scope.clientRoles.splice(idx, 1);
+                    $scope.clientMappings.push(role);
                 }
-                $scope.selectedClientRoles = [];
-            });
+            }
+            $scope.selectedClientRoles = [];
+            Notifications.success("Client role added.");
+        });
     };
 
     $scope.deleteClientRole = function() {
         $scope.compositeSwitchDisabled=true;
         $http.delete(authUrl + '/admin/realms/' + realm.realm + '/roles-by-id/' + role.id + '/composites',
-            {data : $scope.selectedClientMappings, headers : {"content-type" : "application/json"}}).success(function() {
-                for (var i = 0; i < $scope.selectedClientMappings.length; i++) {
-                    var role = $scope.selectedClientMappings[i];
-                    var idx = $scope.clientMappings.indexOf($scope.selectedClientMappings[i]);
-                    if (idx != -1) {
-                        $scope.clientMappings.splice(idx, 1);
-                        $scope.clientRoles.push(role);
-                    }
+            {data : $scope.selectedClientMappings, headers : {"content-type" : "application/json"}}).then(function() {
+            for (var i = 0; i < $scope.selectedClientMappings.length; i++) {
+                var role = $scope.selectedClientMappings[i];
+                var idx = $scope.clientMappings.indexOf($scope.selectedClientMappings[i]);
+                if (idx != -1) {
+                    $scope.clientMappings.splice(idx, 1);
+                    $scope.clientRoles.push(role);
                 }
-                $scope.selectedClientMappings = [];
-            });
+            }
+            $scope.selectedClientMappings = [];
+            Notifications.success("Client role removed.");
+        });
     };
 
 
@@ -837,15 +969,68 @@ module.factory('ClientRole', function($resource) {
     });
 });
 
-module.factory('ClientClaims', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/clients/:client/claims', {
+module.factory('ClientDefaultClientScopes', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/clients/:client/default-client-scopes/:clientScopeId', {
         realm : '@realm',
-        client : "@client"
-    },  {
+        client : "@client",
+        clientScopeId : '@clientScopeId'
+    }, {
         update : {
             method : 'PUT'
         }
     });
+});
+
+module.factory('ClientOptionalClientScopes', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/clients/:client/optional-client-scopes/:clientScopeId', {
+        realm : '@realm',
+        client : "@client",
+        clientScopeId : '@clientScopeId'
+    }, {
+        update : {
+            method : 'PUT'
+        }
+    });
+});
+
+module.factory('ClientEvaluateProtocolMappers', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/clients/:client/evaluate-scopes/protocol-mappers?scope=:scopeParam', {
+        realm : '@realm',
+        client : "@client",
+        scopeParam : "@scopeParam"
+    });
+});
+
+module.factory('ClientEvaluateGrantedRoles', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/clients/:client/evaluate-scopes/scope-mappings/:roleContainer/granted?scope=:scopeParam', {
+        realm : '@realm',
+        client : "@client",
+        roleContainer : "@roleContainer",
+        scopeParam : "@scopeParam"
+    });
+});
+
+module.factory('ClientEvaluateNotGrantedRoles', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/clients/:client/evaluate-scopes/scope-mappings/:roleContainer/not-granted?scope=:scopeParam', {
+        realm : '@realm',
+        client : "@client",
+        roleContainer : "@roleContainer",
+        scopeParam : "@scopeParam"
+    });
+});
+
+module.factory('ClientEvaluateGenerateExampleToken', function($resource) {
+    var url = authUrl + '/admin/realms/:realm/clients/:client/evaluate-scopes/generate-example-access-token?scope=:scopeParam&userId=:userId';
+    return {
+        url : function(parameters)
+        {
+            return url
+                .replace(':realm', parameters.realm)
+                .replace(':client', parameters.client)
+                .replace(':scopeParam', parameters.scopeParam)
+                .replace(':userId', parameters.userId);
+        }
+    }
 });
 
 module.factory('ClientProtocolMappersByProtocol', function($resource) {
@@ -856,55 +1041,55 @@ module.factory('ClientProtocolMappersByProtocol', function($resource) {
     });
 });
 
-module.factory('ClientTemplateProtocolMappersByProtocol', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template/protocol-mappers/protocol/:protocol', {
+module.factory('ClientScopeProtocolMappersByProtocol', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope/protocol-mappers/protocol/:protocol', {
         realm : '@realm',
-        template : "@template",
+        clientScope : "@clientScope",
         protocol : "@protocol"
     });
 });
 
-module.factory('ClientTemplateRealmScopeMapping', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template/scope-mappings/realm', {
+module.factory('ClientScopeRealmScopeMapping', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope/scope-mappings/realm', {
         realm : '@realm',
-        template : '@template'
+        clientScope : '@clientScope'
     });
 });
 
-module.factory('ClientTemplateAvailableRealmScopeMapping', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template/scope-mappings/realm/available', {
+module.factory('ClientScopeAvailableRealmScopeMapping', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope/scope-mappings/realm/available', {
         realm : '@realm',
-        template : '@template'
+        clientScope : '@clientScope'
     });
 });
 
-module.factory('ClientTemplateCompositeRealmScopeMapping', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template/scope-mappings/realm/composite', {
+module.factory('ClientScopeCompositeRealmScopeMapping', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope/scope-mappings/realm/composite', {
         realm : '@realm',
-        template : '@template'
+        clientScope : '@clientScope'
     });
 });
 
-module.factory('ClientTemplateClientScopeMapping', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template/scope-mappings/clients/:targetClient', {
+module.factory('ClientScopeClientScopeMapping', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope/scope-mappings/clients/:targetClient', {
         realm : '@realm',
-        template : '@template',
+        clientScope : '@clientScope',
         targetClient : '@targetClient'
     });
 });
 
-module.factory('ClientTemplateAvailableClientScopeMapping', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template/scope-mappings/clients/:targetClient/available', {
+module.factory('ClientScopeAvailableClientScopeMapping', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope/scope-mappings/clients/:targetClient/available', {
         realm : '@realm',
-        template : '@template',
+        clientScope : '@clientScope',
         targetClient : '@targetClient'
     });
 });
 
-module.factory('ClientTemplateCompositeClientScopeMapping', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template/scope-mappings/clients/:targetClient/composite', {
+module.factory('ClientScopeCompositeClientScopeMapping', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope/scope-mappings/clients/:targetClient/composite', {
         realm : '@realm',
-        template : '@template',
+        clientScope : '@clientScope',
         targetClient : '@targetClient'
     });
 });
@@ -952,19 +1137,6 @@ module.factory('ClientOfflineSessions', function($resource) {
     });
 });
 
-module.factory('ClientLogoutAll', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/clients/:client/logout-all', {
-        realm : '@realm',
-        client : "@client"
-    });
-});
-module.factory('ClientLogoutUser', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/clients/:client/logout-user/:user', {
-        realm : '@realm',
-        client : "@client",
-        user : "@user"
-    });
-});
 module.factory('RealmLogoutAll', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/logout-all', {
         realm : '@realm'
@@ -994,10 +1166,10 @@ module.factory('ClientTestNodesAvailable', function($resource) {
 
 module.factory('ClientCertificate', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/clients/:client/certificates/:attribute', {
-            realm : '@realm',
-            client : "@client",
-            attribute: "@attribute"
-        });
+        realm : '@realm',
+        client : "@client",
+        attribute: "@attribute"
+    });
 });
 
 module.factory('ClientCertificateGenerate', function($resource) {
@@ -1015,10 +1187,10 @@ module.factory('ClientCertificateGenerate', function($resource) {
 
 module.factory('ClientCertificateDownload', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/clients/:client/certificates/:attribute/download', {
-        realm : '@realm',
-        client : "@client",
-        attribute: "@attribute"
-    },
+            realm : '@realm',
+            client : "@client",
+            attribute: "@attribute"
+        },
         {
             download : {
                 method : 'POST',
@@ -1038,11 +1210,33 @@ module.factory('Client', function($resource) {
     });
 });
 
-module.factory('ClientTemplate', function($resource) {
-    return $resource(authUrl + '/admin/realms/:realm/client-templates/:template', {
+module.factory('ClientScope', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-scopes/:clientScope', {
         realm : '@realm',
-        template : '@template'
+        clientScope : '@clientScope'
     },  {
+        update : {
+            method : 'PUT'
+        }
+    });
+});
+
+module.factory('RealmDefaultClientScopes', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/default-default-client-scopes/:clientScopeId', {
+        realm : '@realm',
+        clientScopeId : '@clientScopeId'
+    }, {
+        update : {
+            method : 'PUT'
+        }
+    });
+});
+
+module.factory('RealmOptionalClientScopes', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/default-optional-client-scopes/:clientScopeId', {
+        realm : '@realm',
+        clientScopeId : '@clientScopeId'
+    }, {
         update : {
             method : 'PUT'
         }
@@ -1082,9 +1276,9 @@ module.factory('ClientInstallationJBoss', function($resource) {
     var url = authUrl + '/admin/realms/:realm/clients/:client/installation/jboss';
     return {
         url : function(parameters)
-     {
-        return url.replace(':realm', parameters.realm).replace(':client', parameters.client);
-    }
+        {
+            return url.replace(':realm', parameters.realm).replace(':client', parameters.client);
+        }
     }
 });
 
@@ -1196,11 +1390,6 @@ module.factory('TimeUnit', function() {
         }
     }
 
-    t.convert = function(time, from, to) {
-        var seconds = t.toSeconds(time, from);
-        return t.toUnit(seconds, to);
-    }
-
     return t;
 });
 
@@ -1249,90 +1438,6 @@ module.factory('TimeUnit2', function() {
     return t;
 });
 
-
-module.factory('PasswordPolicy', function() {
-    var p = {};
-
-    p.policyMessages = {
-        hashAlgorithm: 	"Default hashing algorithm.  Default is 'pbkdf2'.",
-        hashIterations: 	"Number of hashing iterations.  Default is 1.  Recommended is 50000.",
-        length:         	"Minimal password length (integer type). Default value is 8.",
-        digits:         	"Minimal number (integer type) of digits in password. Default value is 1.",
-        lowerCase:      	"Minimal number (integer type) of lowercase characters in password. Default value is 1.",
-        upperCase:      	"Minimal number (integer type) of uppercase characters in password. Default value is 1.",
-        specialChars:   	"Minimal number (integer type) of special characters in password. Default value is 1.",
-        notUsername:    	"Block passwords that are equal to the username",
-        regexPattern:  	    "Block passwords that do not match the regex pattern (string type).",
-        passwordHistory:  	"Block passwords that are equal to previous passwords. Default value is 3.",
-        forceExpiredPasswordChange:  	"Force password change when password credential is expired. Default value is 365 days."
-    }
-
-    p.allPolicies = [
-        { name: 'hashAlgorithm', value: 'pbkdf2' },
-        { name: 'hashIterations', value: 1 },
-        { name: 'length', value: 8 },
-        { name: 'digits', value: 1 },
-        { name: 'lowerCase', value: 1 },
-        { name: 'upperCase', value: 1 },
-        { name: 'specialChars', value: 1 },
-        { name: 'notUsername', value: 1 },
-        { name: 'regexPattern', value: ''},
-        { name: 'passwordHistory', value: 3 },
-        { name: 'forceExpiredPasswordChange', value: 365 }
-    ];
-
-    p.parse = function(policyString) {
-        var policies = [];
-        var re, policyEntry;
-
-        if (!policyString || policyString.length == 0){
-            return policies;
-        }
-
-        var policyArray = policyString.split(" and ");
-
-        for (var i = 0; i < policyArray.length; i ++){
-            var policyToken = policyArray[i];
-            
-            if(policyToken.indexOf('regexPattern') === 0) {
-            	re = /(\w+)\((.*)\)/;
-            	policyEntry = re.exec(policyToken);
-                if (null !== policyEntry) {
-                	policies.push({ name: policyEntry[1], value: policyEntry[2] });
-                }
-            } else {
-            	re = /(\w+)\(*(\d*)\)*/;
-            	policyEntry = re.exec(policyToken);
-                if (null !== policyEntry) {
-                	policies.push({ name: policyEntry[1], value: parseInt(policyEntry[2]) });
-                }
-            }
-        }
-        return policies;
-    };
-
-    p.toString = function(policies) {
-        if (!policies || policies.length == 0) {
-            return "";
-        }
-        var policyString = "";
-
-        for (var i = 0; i < policies.length; i++) {
-            policyString += policies[i].name;
-            if ( policies[i].value ){
-                policyString += '(' + policies[i].value + ')';
-            }
-            policyString += " and ";
-        }
-
-        policyString = policyString.substring(0, policyString.length - 5);
-
-        return policyString;
-    };
-
-    return p;
-});
-
 module.filter('removeSelectedPolicies', function() {
     return function(policies, selectedPolicies) {
         var result = [];
@@ -1340,7 +1445,7 @@ module.filter('removeSelectedPolicies', function() {
             var policy = policies[i];
             var policyAvailable = true;
             for(var j in selectedPolicies) {
-                if(policy.name === selectedPolicies[j].name && policy.name !== 'regexPattern') {
+                if(policy.id === selectedPolicies[j].id && !policy.multipleSupported) {
                     policyAvailable = false;
                 }
             }
@@ -1635,10 +1740,26 @@ module.factory('GroupChildren', function($resource) {
     });
 });
 
+module.factory('GroupsCount', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/groups/count', {
+            realm : '@realm'
+        },
+        {
+            query: {
+                isArray: false,
+                method: 'GET',
+                params: {},
+                transformResponse: function (data) {
+                    return angular.fromJson(data)
+                }
+            }
+        });
+});
+
 module.factory('Groups', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/groups', {
         realm : '@realm'
-    });
+    })
 });
 
 module.factory('GroupRealmRoleMapping', function($resource) {
@@ -1694,6 +1815,13 @@ module.factory('GroupMembership', function($resource) {
     });
 });
 
+module.factory('RoleMembership', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/roles/:role/users', {
+        realm : '@realm',
+        role : '@role'
+    });
+});
+
 
 module.factory('UserGroupMembership', function($resource) {
     return $resource(authUrl + '/admin/realms/:realm/users/:userId/groups', {
@@ -1724,3 +1852,90 @@ module.factory('DefaultGroups', function($resource) {
         }
     });
 });
+
+module.factory('SubComponentTypes', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/components/:componentId/sub-component-types', {
+        realm: '@realm',
+        componentId: '@componentId'
+    });
+});
+
+module.factory('Components', function($resource, ComponentUtils) {
+    return $resource(authUrl + '/admin/realms/:realm/components/:componentId', {
+        realm : '@realm',
+        componentId : '@componentId'
+    }, {
+        update : {
+            method : 'PUT',
+            transformRequest: function(componentInstance) {
+
+                if (componentInstance.config) {
+                    ComponentUtils.removeLastEmptyValue(componentInstance.config);
+                }
+
+                return angular.toJson(componentInstance);
+            }
+        },
+        save : {
+            method : 'POST',
+            transformRequest: function(componentInstance) {
+
+                if (componentInstance.config) {
+                    ComponentUtils.removeLastEmptyValue(componentInstance.config);
+                }
+
+                return angular.toJson(componentInstance);
+            }
+        }
+    });
+});
+
+module.factory('UserStorageOperations', function($resource) {
+    var object = {}
+    object.sync = $resource(authUrl + '/admin/realms/:realm/user-storage/:componentId/sync', {
+        realm : '@realm',
+        componentId : '@componentId'
+    });
+    object.removeImportedUsers = $resource(authUrl + '/admin/realms/:realm/user-storage/:componentId/remove-imported-users', {
+        realm : '@realm',
+        componentId : '@componentId'
+    });
+    object.unlinkUsers = $resource(authUrl + '/admin/realms/:realm/user-storage/:componentId/unlink-users', {
+        realm : '@realm',
+        componentId : '@componentId'
+    });
+    object.simpleName = $resource(authUrl + '/admin/realms/:realm/user-storage/:componentId/name', {
+        realm : '@realm',
+        componentId : '@componentId'
+    });
+    return object;
+});
+
+
+module.factory('ClientStorageOperations', function($resource) {
+    var object = {}
+    object.simpleName = $resource(authUrl + '/admin/realms/:realm/client-storage/:componentId/name', {
+        realm : '@realm',
+        componentId : '@componentId'
+    });
+    return object;
+});
+
+
+module.factory('ClientRegistrationPolicyProviders', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/client-registration-policy/providers', {
+        realm : '@realm',
+    });
+});
+
+module.factory('LDAPMapperSync', function($resource) {
+    return $resource(authUrl + '/admin/realms/:realm/user-storage/:parentId/mappers/:mapperId/sync', {
+        realm : '@realm',
+        componentId : '@componentId',
+        mapperId: '@mapperId'
+    });
+});
+
+
+
+

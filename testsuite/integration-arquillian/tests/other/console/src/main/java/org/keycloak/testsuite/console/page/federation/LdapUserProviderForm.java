@@ -1,15 +1,18 @@
 package org.keycloak.testsuite.console.page.federation;
 
-import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
-import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
-
 import org.jboss.arquillian.graphene.findby.FindByJQuery;
 import org.keycloak.testsuite.console.page.fragment.OnOffSwitch;
 import org.keycloak.testsuite.page.Form;
+import org.keycloak.testsuite.util.UIUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.Select;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
 
 /**
  * @author fkiss, pdrozd
@@ -46,8 +49,11 @@ public class LdapUserProviderForm extends Form {
     @FindBy(id = "ldapBindDn")
     private WebElement ldapBindDnInput;
 
-    @FindBy(id = "ldapBindCredential")
+    @FindBy(id = "ldapBindCred")
     private WebElement ldapBindCredentialInput;
+
+    @FindBy(id = "customUserSearchFilter")
+    private WebElement customUserSearchFilterInput;
 
     @FindBy(id = "searchScope")
     private Select searchScopeSelect;
@@ -115,60 +121,88 @@ public class LdapUserProviderForm extends Form {
     @FindBy(xpath = ".//div[contains(@class,'onoffswitch') and ./input[@id='changedSyncEnabled']]")
     private OnOffSwitch periodicChangedUsersSync;
 
+    @FindByJQuery("a:contains('Connection Pooling Settings')")
+    private WebElement connectionPoolingSettingsButton;
+
+    @FindBy(id = "connectionPoolingAuthentication")
+    private WebElement connectionPoolingAuthenticationInput;
+
+    @FindBy(id = "connectionPoolingDebug")
+    private WebElement connectionPoolingDebugInput;
+
+    @FindBy(id = "connectionPoolingInitSize")
+    private WebElement connectionPoolingInitSizeInput;
+
+    @FindBy(id = "connectionPoolingMaxSize")
+    private WebElement connectionPoolingMaxSizeInput;
+
+    @FindBy(id = "connectionPoolingPrefSize")
+    private WebElement connectionPoolingPrefSizeInput;
+
+    @FindBy(id = "connectionPoolingProtocol")
+    private WebElement connectionPoolingProtocolInput;
+
+    @FindBy(id = "connectionPoolingTimeout")
+    private WebElement connectionPoolingTimeoutInput;
+
     public void setConsoleDisplayNameInput(String name) {
-        setInputValue(consoleDisplayNameInput, name);
+        UIUtils.setTextInputValue(consoleDisplayNameInput, name);
     }
 
     public void setPriorityInput(Integer priority) {
-        setInputValue(priorityInput, String.valueOf(priority));
+        UIUtils.setTextInputValue(priorityInput, String.valueOf(priority));
     }
 
     public void setUsernameLDAPAttributeInput(String usernameLDAPAttribute) {
-        setInputValue(usernameLDAPAttributeInput, usernameLDAPAttribute);
+        UIUtils.setTextInputValue(usernameLDAPAttributeInput, usernameLDAPAttribute);
     }
 
     public void setRdnLDAPAttributeInput(String rdnLDAPAttribute) {
-        setInputValue(rdnLDAPAttributeInput, rdnLDAPAttribute);
+        UIUtils.setTextInputValue(rdnLDAPAttributeInput, rdnLDAPAttribute);
     }
 
     public void setUuidLDAPAttributeInput(String uuidLDAPAttribute) {
-        setInputValue(uuidLDAPAttributeInput, uuidLDAPAttribute);
+        UIUtils.setTextInputValue(uuidLDAPAttributeInput, uuidLDAPAttribute);
     }
 
     public void setUserObjectClassesInput(String userObjectClasses) {
-        setInputValue(userObjectClassesInput, userObjectClasses);
+        UIUtils.setTextInputValue(userObjectClassesInput, userObjectClasses);
     }
 
     public void setLdapConnectionUrlInput(String ldapConnectionUrl) {
-        setInputValue(ldapConnectionUrlInput, ldapConnectionUrl);
+        UIUtils.setTextInputValue(ldapConnectionUrlInput, ldapConnectionUrl);
     }
 
     public void setLdapUserDnInput(String ldapUserDn) {
-        setInputValue(ldapUserDnInput, ldapUserDn);
+        UIUtils.setTextInputValue(ldapUserDnInput, ldapUserDn);
     }
 
     public void setLdapBindDnInput(String ldapBindDn) {
-        setInputValue(ldapBindDnInput, ldapBindDn);
+        UIUtils.setTextInputValue(ldapBindDnInput, ldapBindDn);
     }
 
     public void setLdapBindCredentialInput(String ldapBindCredential) {
-        setInputValue(ldapBindCredentialInput, ldapBindCredential);
+        UIUtils.setTextInputValue(ldapBindCredentialInput, ldapBindCredential);
+    }
+
+    public void setCustomUserSearchFilter(String customUserSearchFilter) {
+        UIUtils.setTextInputValue(customUserSearchFilterInput, customUserSearchFilter);
     }
 
     public void setKerberosRealmInput(String kerberosRealm) {
-        setInputValue(kerberosRealmInput, kerberosRealm);
+        UIUtils.setTextInputValue(kerberosRealmInput, kerberosRealm);
     }
 
     public void setServerPrincipalInput(String serverPrincipal) {
-        setInputValue(serverPrincipalInput, serverPrincipal);
+        UIUtils.setTextInputValue(serverPrincipalInput, serverPrincipal);
     }
 
     public void setKeyTabInput(String keyTab) {
-        setInputValue(keyTabInput, keyTab);
+        UIUtils.setTextInputValue(keyTabInput, keyTab);
     }
 
     public void setBatchSizeForSyncInput(String batchSizeForSync) {
-        setInputValue(batchSizeForSyncInput, batchSizeForSync);
+        UIUtils.setTextInputValue(batchSizeForSyncInput, batchSizeForSync);
     }
 
     public void selectEditMode(String mode) {
@@ -179,6 +213,26 @@ public class LdapUserProviderForm extends Form {
     public void selectVendor(String vendor) {
         waitUntilElement(By.id("vendor")).is().present();
         vendorSelect.selectByVisibleText(vendor);
+    }
+
+    public void selectVendor(int index) {
+        waitUntilElement(By.id("vendor")).is().present();
+        vendorSelect.selectByIndex(index);
+    }
+
+    public List<String> getVendors() {
+        waitUntilElement(By.id("vendor")).is().present();
+
+        List<WebElement> vendorsElements = vendorSelect.getOptions();
+        List<String> vendorsString = new ArrayList<>();
+
+        for (WebElement vendorElement : vendorsElements) {
+            String text = vendorElement.getText();
+            if (text.equals("")) {continue;}
+            vendorsString.add(text);
+        }
+
+        return vendorsString;
     }
 
     public void selectAuthenticationType(String authenticationType) {
@@ -204,20 +258,11 @@ public class LdapUserProviderForm extends Form {
     }
 
     public void setAccountAfterPasswordUpdateEnabled(boolean enabled) {
-        if ((!enableAccountAfterPasswordUpdate.isOn() && enabled)
-                || !enabled && enableAccountAfterPasswordUpdate.isOn()) {
-            driver.findElement(By
-                    .xpath("//div[contains(@class,'onoffswitch') and ./input[@id='userAccountControlsAfterPasswordUpdate']]"))
-                    .findElements(By.tagName("span")).get(0).click();
-        }
+        enableAccountAfterPasswordUpdate.setOn(enabled);
     }
 
     public void setAllowKerberosAuthEnabled(boolean enabled) {
-        if ((!allowKerberosAuth.isOn() && enabled) || !enabled && allowKerberosAuth.isOn()) {
-            driver.findElement(
-                    By.xpath("//div[contains(@class,'onoffswitch') and ./input[@id='allowKerberosAuthentication']]"))
-                    .findElements(By.tagName("span")).get(0).click();
-        }
+        allowKerberosAuth.setOn(enabled);
     }
 
     public void setDebugEnabled(boolean debugEnabled) {
@@ -234,6 +279,38 @@ public class LdapUserProviderForm extends Form {
 
     public void setPeriodicChangedUsersSyncEnabled(boolean periodicChangedUsersSyncEnabled) {
         this.periodicChangedUsersSync.setOn(periodicChangedUsersSyncEnabled);
+    }
+
+    public void connectionPoolingSettings() {
+        connectionPoolingSettingsButton.click();
+    }
+
+    public void setConnectionPoolingAuthentication(String connectionPoolingAuthentication) {
+        UIUtils.setTextInputValue(connectionPoolingAuthenticationInput, connectionPoolingAuthentication);
+    }
+
+    public void setConnectionPoolingDebug(String connectionPoolingDebug) {
+        UIUtils.setTextInputValue(connectionPoolingDebugInput, connectionPoolingDebug);
+    }
+
+    public void setConnectionPoolingInitSize(String connectionPoolingInitSize) {
+        UIUtils.setTextInputValue(connectionPoolingInitSizeInput, connectionPoolingInitSize);
+    }
+
+    public void setConnectionPoolingMaxSize(String connectionPoolingMaxSize) {
+        UIUtils.setTextInputValue(connectionPoolingMaxSizeInput, connectionPoolingMaxSize);
+    }
+
+    public void setConnectionPoolingPrefSize(String connectionPoolingPrefSize) {
+        UIUtils.setTextInputValue(connectionPoolingPrefSizeInput, connectionPoolingPrefSize);
+    }
+
+    public void setConnectionPoolingProtocol(String connectionPoolingProtocol) {
+        UIUtils.setTextInputValue(connectionPoolingProtocolInput, connectionPoolingProtocol);
+    }
+
+    public void setConnectionPoolingTimeout(String connectionPoolingTimeout) {
+        UIUtils.setTextInputValue(connectionPoolingTimeoutInput, connectionPoolingTimeout);
     }
 
     public void testConnection() {

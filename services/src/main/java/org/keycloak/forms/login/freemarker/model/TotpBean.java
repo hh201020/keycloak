@@ -16,33 +16,35 @@
  */
 package org.keycloak.forms.login.freemarker.model;
 
+import org.keycloak.credential.CredentialModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.OTPPolicy;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
-import org.keycloak.models.utils.Base32;
 import org.keycloak.models.utils.HmacOTP;
+import org.keycloak.utils.TotpUtils;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URI;
-import java.net.URLEncoder;
+import javax.ws.rs.core.UriBuilder;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
 public class TotpBean {
 
+    private final RealmModel realm;
     private final String totpSecret;
     private final String totpSecretEncoded;
+    private final String totpSecretQrCode;
     private final boolean enabled;
-    private final String contextUrl;
-    private final String keyUri;
+    private UriBuilder uriBuilder;
 
-    public TotpBean(RealmModel realm, UserModel user, URI baseUri) {
-        this.enabled = user.isOtpEnabled();
-        this.contextUrl = baseUri.getPath();
-        
+    public TotpBean(KeycloakSession session, RealmModel realm, UserModel user, UriBuilder uriBuilder) {
+        this.realm = realm;
+        this.uriBuilder = uriBuilder;
+        this.enabled = session.userCredentialManager().isConfiguredFor(realm, user, CredentialModel.OTP);
         this.totpSecret = HmacOTP.generateSecret(20);
-        this.totpSecretEncoded = Base32.encode(totpSecret.getBytes());
-        this.keyUri = realm.getOTPPolicy().getKeyURI(realm, user, this.totpSecret);
+        this.totpSecretEncoded = TotpUtils.encode(totpSecret);
+        this.totpSecretQrCode = TotpUtils.qrCode(totpSecret, realm, user);
     }
 
     public boolean isEnabled() {
@@ -54,20 +56,25 @@ public class TotpBean {
     }
 
     public String getTotpSecretEncoded() {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < totpSecretEncoded.length(); i += 4) {
-            sb.append(totpSecretEncoded.substring(i, i + 4 < totpSecretEncoded.length() ? i + 4 : totpSecretEncoded.length()));
-            if (i + 4 < totpSecretEncoded.length()) {
-                sb.append(" ");
-            }
-        }
-        return sb.toString();
+        return totpSecretEncoded;
     }
 
-    public String getTotpSecretQrCodeUrl() throws UnsupportedEncodingException {
-        String contents = URLEncoder.encode(keyUri, "utf-8");
-        return contextUrl + "qrcode" + "?size=246x246&contents=" + contents;
+    public String getTotpSecretQrCode() {
+        return totpSecretQrCode;
     }
+
+    public String getManualUrl() {
+        return uriBuilder.replaceQueryParam("mode", "manual").build().toString();
+    }
+
+    public String getQrUrl() {
+        return uriBuilder.replaceQueryParam("mode", "qr").build().toString();
+    }
+
+    public OTPPolicy getPolicy() {
+        return realm.getOTPPolicy();
+    }
+
 
 }
 

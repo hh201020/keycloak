@@ -17,12 +17,6 @@
 
 package org.keycloak.util.ldap;
 
-import java.io.File;
-import java.io.InputStream;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.text.StrSubstitutor;
@@ -42,6 +36,12 @@ import org.jboss.logging.Logger;
 import org.keycloak.common.util.FindFile;
 import org.keycloak.common.util.StreamUtil;
 
+import java.io.File;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
@@ -52,6 +52,7 @@ public class LDAPEmbeddedServer {
     public static final String PROPERTY_BASE_DN = "ldap.baseDN";
     public static final String PROPERTY_BIND_HOST = "ldap.host";
     public static final String PROPERTY_BIND_PORT = "ldap.port";
+    public static final String PROPERTY_BIND_LDAPS_PORT = "ldaps.port";
     public static final String PROPERTY_LDIF_FILE = "ldap.ldif";
     public static final String PROPERTY_SASL_PRINCIPAL = "ldap.saslPrincipal";
     public static final String PROPERTY_DSF = "ldap.dsf";
@@ -59,6 +60,7 @@ public class LDAPEmbeddedServer {
     private static final String DEFAULT_BASE_DN = "dc=keycloak,dc=org";
     private static final String DEFAULT_BIND_HOST = "localhost";
     private static final String DEFAULT_BIND_PORT = "10389";
+    private static final String DEFAULT_BIND_LDAPS_PORT = "10636";
     private static final String DEFAULT_LDIF_FILE = "classpath:ldap/default-users.ldif";
     private static final String PROPERTY_ENABLE_SSL = "enableSSL";
     private static final String PROPERTY_KEYSTORE_FILE = "keystoreFile";
@@ -73,6 +75,7 @@ public class LDAPEmbeddedServer {
     protected String baseDN;
     protected String bindHost;
     protected int bindPort;
+    protected int bindLdapsPort;
     protected String ldifFile;
     protected String ldapSaslPrincipal;
     protected String directoryServiceFactory;
@@ -117,6 +120,8 @@ public class LDAPEmbeddedServer {
         this.bindHost = readProperty(PROPERTY_BIND_HOST, DEFAULT_BIND_HOST);
         String bindPort = readProperty(PROPERTY_BIND_PORT, DEFAULT_BIND_PORT);
         this.bindPort = Integer.parseInt(bindPort);
+        String bindLdapsPort = readProperty(PROPERTY_BIND_LDAPS_PORT, DEFAULT_BIND_LDAPS_PORT);
+        this.bindLdapsPort = Integer.parseInt(bindLdapsPort);
         this.ldifFile = readProperty(PROPERTY_LDIF_FILE, DEFAULT_LDIF_FILE);
         this.ldapSaslPrincipal = readProperty(PROPERTY_SASL_PRINCIPAL, null);
         this.directoryServiceFactory = readProperty(PROPERTY_DSF, DEFAULT_DSF);
@@ -220,12 +225,14 @@ public class LDAPEmbeddedServer {
 
         // Read the transports
         Transport ldap = new TcpTransport(this.bindHost, this.bindPort, 3, 50);
+        ldapServer.addTransports( ldap );
         if (enableSSL) {
-            ldap.setEnableSSL(true);
+            Transport ldaps = new TcpTransport(this.bindHost, this.bindLdapsPort, 3, 50);
+            ldaps.setEnableSSL(true);
             ldapServer.setKeystoreFile(keystoreFile);
             ldapServer.setCertificatePassword(certPassword);
+            ldapServer.addTransports( ldaps );
         }
-        ldapServer.addTransports( ldap );
 
         // Associate the DS to this LdapServer
         ldapServer.setDirectoryService( directoryService );

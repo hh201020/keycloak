@@ -16,32 +16,34 @@
  */
 package org.keycloak.services.resources.admin;
 
-import java.io.IOException;
-import java.util.LinkedList;
-import java.util.List;
-
+import org.jboss.logging.Logger;
 import org.keycloak.common.ClientConnection;
+import org.keycloak.common.util.Time;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventStoreProvider;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.events.admin.AuthDetails;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.services.ServicesLogger;
 import org.keycloak.util.JsonSerialization;
-import org.keycloak.common.util.Time;
 
 import javax.ws.rs.core.UriInfo;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 public class AdminEventBuilder {
 
-    private static final ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
+    protected static final Logger logger = Logger.getLogger(AdminEventBuilder.class);
 
     private EventStoreProvider store;
-    private List<EventListenerProvider> listeners;
+    private Map<String, EventListenerProvider> listeners;
     private RealmModel realm;
     private AdminEvent adminEvent;
 
@@ -49,26 +51,9 @@ public class AdminEventBuilder {
         this.realm = realm;
         adminEvent = new AdminEvent();
 
-        if (realm.isAdminEventsEnabled()) {
-            EventStoreProvider store = session.getProvider(EventStoreProvider.class);
-            if (store != null) {
-                this.store = store;
-            } else {
-                logger.noEventStoreProvider();
-            }
-        }
-
-        if (realm.getEventsListeners() != null && !realm.getEventsListeners().isEmpty()) {
-            this.listeners = new LinkedList<>();
-            for (String id : realm.getEventsListeners()) {
-                EventListenerProvider listener = session.getProvider(EventListenerProvider.class, id);
-                if (listener != null) {
-                    listeners.add(listener);
-                } else {
-                    logger.providerNotFound(id);
-                }
-            }
-        }
+        this.listeners = new HashMap<>();
+        updateStore(session);
+        addListeners(session);
 
         authRealm(auth.getRealm());
         authClient(auth.getClient());
@@ -86,8 +71,52 @@ public class AdminEventBuilder {
         return this;
     }
 
-    public AdminEventBuilder operation(OperationType e) {
-        adminEvent.setOperationType(e);
+    /**
+     * Refreshes the builder assuming that the realm event information has 
+     * changed. Thought to be used when the updateRealmEventsConfig has
+     * modified the events configuration. Now the store and the listeners are 
+     * updated to have previous and new setup.
+     * @param session The session
+     * @return The same builder
+     */
+    public AdminEventBuilder refreshRealmEventsConfig(KeycloakSession session) {
+        return this.updateStore(session).addListeners(session);
+    }
+    
+    private AdminEventBuilder updateStore(KeycloakSession session) {
+        if (realm.isAdminEventsEnabled() && store == null) {
+            this.store = session.getProvider(EventStoreProvider.class);
+            if (store == null) {
+                ServicesLogger.LOGGER.noEventStoreProvider();
+            }
+        }
+        return this;
+    }
+    
+    private AdminEventBuilder addListeners(KeycloakSession session) {
+        Set<String> extraListeners = realm.getEventsListeners();
+        if (extraListeners != null && !extraListeners.isEmpty()) {
+            for (String id : extraListeners) {
+                if (!listeners.containsKey(id)) {
+                    EventListenerProvider listener = session.getProvider(EventListenerProvider.class, id);
+                    if (listener != null) {
+                        listeners.put(id, listener);
+                    } else {
+                        ServicesLogger.LOGGER.providerNotFound(id);
+                    }
+                }
+            }
+        }
+        return this;
+    }
+
+    public AdminEventBuilder operation(OperationType operationType) {
+        adminEvent.setOperationType(operationType);
+        return this;
+    }
+
+    public AdminEventBuilder resource(ResourceType resourceType){
+        adminEvent.setResourceType(resourceType);
         return this;
     }
 
@@ -178,12 +207,6 @@ public class AdminEventBuilder {
         return path.substring(path.indexOf(realmRelative) + realmRelative.length());
     }
 
-    public void error(String error) {
-        adminEvent.setOperationType(OperationType.valueOf(adminEvent.getOperationType().name() + "_ERROR"));
-        adminEvent.setError(error);
-        send();
-    }
-
     public AdminEventBuilder representation(Object value) {
         if (value == null || value.equals("")) {
             return this;
@@ -215,16 +238,16 @@ public class AdminEventBuilder {
             try {
                 store.onEvent(adminEvent, includeRepresentation);
             } catch (Throwable t) {
-                logger.failedToSaveEvent(t);
+                ServicesLogger.LOGGER.failedToSaveEvent(t);
             }
         }
 
         if (listeners != null) {
-            for (EventListenerProvider l : listeners) {
+            for (EventListenerProvider l : listeners.values()) {
                 try {
                     l.onEvent(adminEvent, includeRepresentation);
                 } catch (Throwable t) {
-                    logger.failedToSendType(t, l);
+                    ServicesLogger.LOGGER.failedToSendType(t, l);
                 }
             }
         }

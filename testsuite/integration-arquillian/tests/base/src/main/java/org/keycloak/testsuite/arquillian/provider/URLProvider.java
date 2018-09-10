@@ -24,21 +24,26 @@ import org.jboss.arquillian.core.api.annotation.Inject;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.logging.Logger;
 import org.jboss.logging.Logger.Level;
+import org.keycloak.testsuite.arquillian.SuiteContext;
 import org.keycloak.testsuite.arquillian.TestContext;
+import org.keycloak.testsuite.arquillian.annotation.AppServerBrowserContext;
 import org.keycloak.testsuite.arquillian.annotation.AppServerContext;
+import org.keycloak.testsuite.arquillian.annotation.AuthServerBrowserContext;
 import org.keycloak.testsuite.arquillian.annotation.AuthServerContext;
 
 import java.lang.annotation.Annotation;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
-import org.keycloak.testsuite.arquillian.SuiteContext;
+import org.keycloak.testsuite.arquillian.ContainerInfo;
 
 public class URLProvider extends URLResourceProvider {
 
     protected final Logger log = Logger.getLogger(this.getClass());
 
+    public static final String BOUND_TO_ALL = "0.0.0.0";
     public static final String LOCALHOST_ADDRESS = "127.0.0.1";
     public static final String LOCALHOST_HOSTNAME = "localhost";
 
@@ -55,10 +60,28 @@ public class URLProvider extends URLResourceProvider {
     public Object doLookup(ArquillianResource resource, Annotation... qualifiers) {
         URL url = (URL) super.doLookup(resource, qualifiers);
 
+        if (url == null) {
+            String port = appServerSslRequired ? 
+                                System.getProperty("app.server.https.port", "8643") : 
+                                System.getProperty("app.server.http.port", "8280");
+            String protocol = appServerSslRequired ? "https" : "http";
+
+            try {
+                for (Annotation a : qualifiers) {
+                    if (OperateOnDeployment.class.isAssignableFrom(a.annotationType())) {
+                        return new URL(protocol + "://localhost:" + port + "/" + ((OperateOnDeployment) a).value());
+                    }
+                }
+            } catch (MalformedURLException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+        
         // fix injected URL
         if (url != null) {
             try {
                 url = fixLocalhost(url);
+                url = fixBoundToAll(url);
                 url = removeTrailingSlash(url);
                 if (appServerSslRequired) {
                     url = fixSsl(url);
@@ -73,41 +96,37 @@ public class URLProvider extends URLResourceProvider {
             }
         }
 
-        try {
-            if ("true".equals(System.getProperty("app.server.eap6"))) {
-                if (url == null) {
-                    url = new URL("http://localhost:8080/");
-                }
-                URL fixedUrl = url;
-                if (url.getPort() == 8080) {
-                    for (Annotation a : qualifiers) {
-                        if (OperateOnDeployment.class.isAssignableFrom(a.annotationType())) {
-                            String port = appServerSslRequired ?  System.getProperty("app.server.https.port", "8643"):System.getProperty("app.server.http.port", "8280");
-                            url = new URL(fixedUrl.toExternalForm().replace("8080", port) + "/" + ((OperateOnDeployment) a).value());
-                        }
-                    }
-
-                }
-
-                if (url.getPort() == 8080) {
-                    url = null;
-                }
-            }
-        } catch (MalformedURLException e) {
-            e.printStackTrace();
-        }
-
         // inject context roots if annotation present
         for (Annotation a : qualifiers) {
             if (AuthServerContext.class.isAssignableFrom(a.annotationType())) {
                 return suiteContext.get().getAuthServerInfo().getContextRoot();
             }
             if (AppServerContext.class.isAssignableFrom(a.annotationType())) {
-                return testContext.get().getAppServerInfo().getContextRoot();
+                ContainerInfo appServerInfo = testContext.get().getAppServerInfo();
+                if (appServerInfo != null) return appServerInfo.getContextRoot();
+                
+                List<ContainerInfo> appServerBackendsInfo = testContext.get().getAppServerBackendsInfo();
+                if (appServerBackendsInfo.isEmpty()) throw new IllegalStateException("Both testContext's appServerInfo and appServerBackendsInfo not set.");
+                
+                return appServerBackendsInfo.get(0).getContextRoot();
+            }
+            if (AuthServerBrowserContext.class.isAssignableFrom(a.annotationType())) {
+                return suiteContext.get().getAuthServerInfo().getBrowserContextRoot();
+            }
+            if (AppServerBrowserContext.class.isAssignableFrom(a.annotationType())) {
+                return testContext.get().getAppServerInfo().getBrowserContextRoot();
             }
         }
 
         return url;
+    }
+
+    public URL fixBoundToAll(URL url) throws MalformedURLException {
+        URL fixedUrl = url;
+        if (url.getHost().contains(BOUND_TO_ALL)) {
+            fixedUrl = new URL(fixedUrl.toExternalForm().replace(BOUND_TO_ALL, LOCALHOST_HOSTNAME));
+        }
+        return fixedUrl;
     }
 
     public URL fixLocalhost(URL url) throws MalformedURLException {

@@ -21,8 +21,9 @@ import org.eclipse.jetty.server.AbstractHttpConnection;
 import org.eclipse.jetty.server.Authentication;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.UserIdentity;
-import org.keycloak.adapters.spi.AdapterSessionStore;
+import org.keycloak.adapters.jetty.spi.JettyUserSessionManagement;
 import org.keycloak.adapters.saml.SamlDeployment;
+import org.keycloak.adapters.spi.AdapterSessionStore;
 
 import javax.servlet.ServletRequest;
 
@@ -43,12 +44,17 @@ public class KeycloakSamlAuthenticator extends AbstractSamlAuthenticator {
     }
 
     @Override
+    public JettyUserSessionManagement createSessionManagement(Request request) {
+        return new JettyUserSessionManagement(new Jetty8SessionManager(request.getSessionManager()));
+    }
+
+    @Override
     protected Request resolveRequest(ServletRequest req) {
         return (req instanceof Request)?(Request)req: AbstractHttpConnection.getCurrentConnection().getRequest();
     }
 
     @Override
-    public Authentication createAuthentication(UserIdentity userIdentity) {
+    public Authentication createAuthentication(UserIdentity userIdentity, Request request) {
         return new KeycloakAuthentication(getAuthMethod(), userIdentity) {
             @Override
             public void logout() {

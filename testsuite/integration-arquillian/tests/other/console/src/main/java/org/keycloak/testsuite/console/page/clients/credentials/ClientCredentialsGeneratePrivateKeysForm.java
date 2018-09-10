@@ -22,9 +22,12 @@
 package org.keycloak.testsuite.console.page.clients.credentials;
 
 import org.keycloak.testsuite.page.Form;
+import org.keycloak.testsuite.util.UIUtils;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.Select;
+
+import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
 
 /**
  *
@@ -56,18 +59,19 @@ public class ClientCredentialsGeneratePrivateKeysForm extends Form {
     }
     
     public void setKeyAlias(String value) {
-        setInputValue(keyAliasInput, value);
+        UIUtils.setTextInputValue(keyAliasInput, value);
     }
     
     public void setKeyPassword(String value) {
-        setInputValue(keyPasswordInput, value);
+        UIUtils.setTextInputValue(keyPasswordInput, value);
     }
     
     public void setStorePassword(String value) {
-        setInputValue(storePasswordInput, value);
+        UIUtils.setTextInputValue(storePasswordInput, value);
     }
     
     public void clickGenerateAndDownload() {
+        waitUntilElement(generateAndDownloadButton).is().present();
         generateAndDownloadButton.click();
     }    
 }

@@ -18,8 +18,11 @@
 package org.keycloak.admin.client.resource;
 
 import org.jboss.resteasy.annotations.cache.NoCache;
+import org.keycloak.representations.adapters.action.GlobalRequestResult;
 import org.keycloak.representations.idm.ClientRepresentation;
+import org.keycloak.representations.idm.ClientScopeRepresentation;
 import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.representations.idm.UserSessionRepresentation;
 
 import javax.ws.rs.Consumes;
@@ -34,7 +37,6 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * @author rodrigo.sasaki@icarros.com.br
@@ -55,21 +57,6 @@ public interface ClientResource {
     @DELETE
     public void remove();
 
-    @GET
-    @Path("allowed-origins")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Set<String> getAllowedOrigins();
-
-    @PUT
-    @Path("allowed-origins")
-    @Consumes(MediaType.APPLICATION_JSON)
-    public void updateAllowedOrigins(Set<String> allowedOrigins);
-
-    @DELETE
-    @Path("allowed-origins")
-    @Consumes(MediaType.APPLICATION_JSON)
-    public void removeAllowedOrigins(Set<String> originsToRemove);
-
     @POST
     @Path("client-secret")
     @Produces(MediaType.APPLICATION_JSON)
@@ -80,18 +67,30 @@ public interface ClientResource {
     @Produces(MediaType.APPLICATION_JSON)
     public CredentialRepresentation getSecret();
 
+    /**
+     * Generate a new registration access token for the client
+     *
+     * @return
+     */
+    @Path("registration-access-token")
+    @POST
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public ClientRepresentation regenerateRegistrationAccessToken();
+
+    /**
+     * Get representation of certificate resource
+     *
+     * @param attributePrefix
+     * @return
+     */
+    @Path("certificates/{attr}")
+    public ClientAttributeCertificateResource getCertficateResource(@PathParam("attr") String attributePrefix);
+
     @GET
     @NoCache
     @Path("installation/providers/{providerId}")
     public String getInstallationProvider(@PathParam("providerId") String providerId);
-
-    @POST
-    @Path("logout-all")
-    public void logoutAllUsers();
-
-    @POST
-    @Path("logout-user/{username}")
-    public void logoutUser(@PathParam("username") String username);
 
     @Path("session-count")
     @GET
@@ -103,9 +102,20 @@ public interface ClientResource {
     @Produces(MediaType.APPLICATION_JSON)
     public List<UserSessionRepresentation> getUserSessions(@QueryParam("first") Integer firstResult, @QueryParam("max") Integer maxResults);
 
+    @Path("offline-session-count")
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    Map<String, Long> getOfflineSessionCount();
+
+    @Path("offline-sessions")
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    List<UserSessionRepresentation> getOfflineUserSessions(@QueryParam("first") Integer firstResult, @QueryParam("max") Integer maxResults);
+
     @POST
     @Path("push-revocation")
-    public void pushRevocation();
+    @Produces(MediaType.APPLICATION_JSON)
+    void pushRevocation();
 
     @Path("/scope-mappings")
     public RoleMappingResource getScopeMappings();
@@ -113,4 +123,62 @@ public interface ClientResource {
     @Path("/roles")
     public RolesResource roles();
 
+    /**
+     * Get default client scopes.  Only name and ids are returned.
+     *
+     * @return default client scopes
+     */
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("default-client-scopes")
+    List<ClientScopeRepresentation> getDefaultClientScopes();
+
+    @PUT
+    @Path("default-client-scopes/{clientScopeId}")
+    void addDefaultClientScope(@PathParam("clientScopeId") String clientScopeId);
+
+    @DELETE
+    @Path("default-client-scopes/{clientScopeId}")
+    void removeDefaultClientScope(@PathParam("clientScopeId") String clientScopeId);
+
+    /**
+     * Get optional client scopes.  Only name and ids are returned.
+     *
+     * @return optional client scopes
+     */
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("optional-client-scopes")
+    List<ClientScopeRepresentation> getOptionalClientScopes();
+
+    @PUT
+    @Path("optional-client-scopes/{clientScopeId}")
+    void addOptionalClientScope(@PathParam("clientScopeId") String clientScopeId);
+
+    @DELETE
+    @Path("optional-client-scopes/{clientScopeId}")
+    void removeOptionalClientScope(@PathParam("clientScopeId") String clientScopeId);
+
+    @Path("/service-account-user")
+    @GET
+    @NoCache
+    @Produces(MediaType.APPLICATION_JSON)
+    UserRepresentation getServiceAccountUser();
+
+    @Path("nodes")
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    void registerNode(Map<String, String> formParams);
+
+    @Path("nodes/{node}")
+    @DELETE
+    void unregisterNode(final @PathParam("node") String node);
+
+    @Path("test-nodes-available")
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    GlobalRequestResult testNodesAvailable();
+
+    @Path("/authz/resource-server")
+    AuthorizationResource authorization();
 }

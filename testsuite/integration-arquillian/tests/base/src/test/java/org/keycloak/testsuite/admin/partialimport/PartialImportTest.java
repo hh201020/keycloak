@@ -16,36 +16,47 @@
  */
 package org.keycloak.testsuite.admin.partialimport;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import javax.ws.rs.ProcessingException;
-import javax.ws.rs.core.Response;
+import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.admin.client.resource.IdentityProviderResource;
 import org.keycloak.admin.client.resource.RoleResource;
 import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.events.admin.OperationType;
 import org.keycloak.partialimport.PartialImportResult;
 import org.keycloak.partialimport.PartialImportResults;
+import org.keycloak.representations.idm.AdminEventRepresentation;
 import org.keycloak.representations.idm.ClientRepresentation;
+import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
 import org.keycloak.representations.idm.PartialImportRepresentation;
+import org.keycloak.representations.idm.PartialImportRepresentation.Policy;
+import org.keycloak.representations.idm.RealmRepresentation;
+import org.keycloak.representations.idm.RoleRepresentation;
+import org.keycloak.representations.idm.RolesRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.AbstractAuthTest;
+import org.keycloak.testsuite.Assert;
+import org.keycloak.testsuite.admin.ApiUtil;
+import org.keycloak.testsuite.util.AssertAdminEvents;
+import org.keycloak.testsuite.util.RealmBuilder;
+
+import javax.ws.rs.core.Response;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-
-import org.keycloak.representations.idm.PartialImportRepresentation.Policy;
-import org.keycloak.representations.idm.RoleRepresentation;
-import org.keycloak.representations.idm.RolesRepresentation;
-import org.keycloak.testsuite.admin.ApiUtil;
+import static org.keycloak.testsuite.auth.page.AuthRealm.MASTER;
 
 /**
  * Tests for the partial import endpoint in admin client.  Also tests the
@@ -56,9 +67,13 @@ import org.keycloak.testsuite.admin.ApiUtil;
  */
 public class PartialImportTest extends AbstractAuthTest {
 
-    private static final int NUM_RESOURCE_TYPES = 5;
+    @Rule
+    public AssertAdminEvents assertAdminEvents = new AssertAdminEvents(this);
+
+    private static final int NUM_RESOURCE_TYPES = 6;
     private static final String CLIENT_ROLES_CLIENT = "clientRolesClient";
     private static final String USER_PREFIX = "user";
+    private static final String GROUP_PREFIX = "group";
     private static final String CLIENT_PREFIX = "client";
     private static final String REALM_ROLE_PREFIX = "realmRole";
     private static final String CLIENT_ROLE_PREFIX = "clientRole";
@@ -66,10 +81,22 @@ public class PartialImportTest extends AbstractAuthTest {
     private static final int NUM_ENTITIES = IDP_ALIASES.length;
 
     private PartialImportRepresentation piRep;
+    private String realmId;
 
     @Before
-    public void init() {
+    public void initAdminEvents() {
+        RealmRepresentation realmRep = RealmBuilder.edit(testRealmResource().toRepresentation()).testEventListener().build();
+        realmId = realmRep.getId();
+        realmRep.setDuplicateEmailsAllowed(false);
+        adminClient.realm(realmRep.getRealm()).update(realmRep);
+
         piRep = new PartialImportRepresentation();
+    }
+
+    @After
+    public void tearDownAdminEvents() {
+        RealmRepresentation realmRep = RealmBuilder.edit(testRealmResource().toRepresentation()).removeTestEventListener().build();
+        adminClient.realm(realmRep.getRealm()).update(realmRep);
     }
 
     @Before
@@ -95,10 +122,18 @@ public class PartialImportTest extends AbstractAuthTest {
     }
 
     @Before
+    public void removeGroups() {
+        List<GroupRepresentation> toRemove = testRealmResource().groups().groups();
+        for (GroupRepresentation group: toRemove) {
+            testRealmResource().groups().group(group.getId()).remove();
+        }
+    }
+
+    @Before
     public void removeClients() {
         List<ClientRepresentation> toRemove = testRealmResource().clients().findAll();
         for (ClientRepresentation client : toRemove) {
-            if (client.getName().startsWith(CLIENT_PREFIX)) {
+            if (client.getName() != null && client.getName().startsWith(CLIENT_PREFIX)) {
                 testRealmResource().clients().get(client.getId()).remove();
             }
         }
@@ -162,6 +197,33 @@ public class PartialImportTest extends AbstractAuthTest {
         }
 
         piRep.setUsers(users);
+    }
+
+    private void addUsersWithTermsAndConditions() {
+        List<UserRepresentation> users = new ArrayList<>();
+        List<String> requiredActions = new ArrayList<>();
+        requiredActions.add("terms_and_conditions");
+
+        for (int i = 0; i < NUM_ENTITIES; i++) {
+            UserRepresentation user = createUserRepresentation(USER_PREFIX + i, USER_PREFIX + i + "@foo.com", "foo", "bar", true);
+            user.setRequiredActions(requiredActions);
+            users.add(user);
+        }
+
+        piRep.setUsers(users);
+    }
+
+    private void addGroups() {
+        List<GroupRepresentation> groups = new ArrayList<>();
+
+        for (int i=0; i < NUM_ENTITIES; i++) {
+            GroupRepresentation group = new GroupRepresentation();
+            group.setName(GROUP_PREFIX + i);
+            group.setPath("/" + GROUP_PREFIX + i);
+            groups.add(group);
+        }
+
+        piRep.setGroups(groups);
     }
 
     private void addClients() {
@@ -229,17 +291,101 @@ public class PartialImportTest extends AbstractAuthTest {
 
     @Test
     public void testAddUsers() {
+        assertAdminEvents.clear();
+
         setFail();
         addUsers();
 
         PartialImportResults results = doImport();
         assertEquals(NUM_ENTITIES, results.getAdded());
 
+        // Need to do this way as admin events from partial import are unsorted
+        Set<String> userIds = new HashSet<>();
+        for (int i=0 ; i<NUM_ENTITIES ; i++) {
+            AdminEventRepresentation adminEvent = assertAdminEvents.poll();
+            Assert.assertEquals(realmId, adminEvent.getRealmId());
+            Assert.assertEquals(OperationType.CREATE.name(), adminEvent.getOperationType());
+            Assert.assertTrue(adminEvent.getResourcePath().startsWith("users/"));
+            String userId = adminEvent.getResourcePath().substring(6);
+            userIds.add(userId);
+        }
+
+        assertAdminEvents.assertEmpty();
+
+
         for (PartialImportResult result : results.getResults()) {
             String id = result.getId();
             UserResource userRsc = testRealmResource().users().get(id);
             UserRepresentation user = userRsc.toRepresentation();
             assertTrue(user.getUsername().startsWith(USER_PREFIX));
+            Assert.assertTrue(userIds.contains(id));
+        }
+    }
+
+    @Test
+    public void testAddUsersWithDuplicateEmailsForbidden() {
+        assertAdminEvents.clear();
+
+        setFail();
+        addUsers();
+        
+        UserRepresentation user = createUserRepresentation(USER_PREFIX + 999, USER_PREFIX + 1 + "@foo.com", "foo", "bar", true);
+        piRep.getUsers().add(user);
+
+        Response response = testRealmResource().partialImport(piRep);
+        assertEquals(409, response.getStatus());
+    }
+    
+    @Test
+    public void testAddUsersWithDuplicateEmailsAllowed() {
+        
+        RealmRepresentation realmRep = testRealmResource().toRepresentation();
+        realmRep.setDuplicateEmailsAllowed(true);
+        testRealmResource().update(realmRep);
+                
+        assertAdminEvents.clear();
+
+        setFail();
+        addUsers();
+        doImport();
+        
+        UserRepresentation user = createUserRepresentation(USER_PREFIX + 999, USER_PREFIX + 1 + "@foo.com", "foo", "bar", true);
+        piRep.setUsers(Arrays.asList(user));
+        
+        PartialImportResults results = doImport();
+        assertEquals(1, results.getAdded());
+    }
+
+    @Test
+    public void testAddUsersWithTermsAndConditions() {
+        assertAdminEvents.clear();
+
+        setFail();
+        addUsersWithTermsAndConditions();
+
+        PartialImportResults results = doImport();
+        assertEquals(NUM_ENTITIES, results.getAdded());
+
+        // Need to do this way as admin events from partial import are unsorted
+        Set<String> userIds = new HashSet<>();
+        for (int i=0 ; i<NUM_ENTITIES ; i++) {
+            AdminEventRepresentation adminEvent = assertAdminEvents.poll();
+            Assert.assertEquals(realmId, adminEvent.getRealmId());
+            Assert.assertEquals(OperationType.CREATE.name(), adminEvent.getOperationType());
+            Assert.assertTrue(adminEvent.getResourcePath().startsWith("users/"));
+            String userId = adminEvent.getResourcePath().substring(6);
+            userIds.add(userId);
+        }
+
+        assertAdminEvents.assertEmpty();
+
+
+        for (PartialImportResult result : results.getResults()) {
+            String id = result.getId();
+            UserResource userRsc = testRealmResource().users().get(id);
+            UserRepresentation user = userRsc.toRepresentation();
+            assertTrue(user.getUsername().startsWith(USER_PREFIX));
+            Assert.assertTrue(userIds.contains(id));
         }
     }
 
@@ -323,6 +469,12 @@ public class PartialImportTest extends AbstractAuthTest {
     }
 
     @Test
+    public void testAddGroupsFail() {
+        addGroups();
+        testFail();
+    }
+
+    @Test
     public void testAddClientsFail() {
         addClients();
         testFail();
@@ -358,6 +510,12 @@ public class PartialImportTest extends AbstractAuthTest {
     @Test
     public void testAddUsersSkip() {
         addUsers();
+        testSkip();
+    }
+
+    @Test
+    public void testAddGroupsSkip() {
+        addGroups();
         testSkip();
     }
 
@@ -401,6 +559,12 @@ public class PartialImportTest extends AbstractAuthTest {
     }
 
     @Test
+    public void testAddGroupsOverwrite() {
+        addGroups();
+        testOverwrite();
+    }
+
+    @Test
     public void testAddClientsOverwrite() {
         addClients();
         testOverwrite();
@@ -427,6 +591,7 @@ public class PartialImportTest extends AbstractAuthTest {
 
     private void importEverything() {
         addUsers();
+        addGroups();
         addClients();
         addProviders();
         addRealmRoles();
@@ -459,6 +624,38 @@ public class PartialImportTest extends AbstractAuthTest {
         importEverything();
         PartialImportResults results = doImport();
         assertEquals(NUM_ENTITIES * NUM_RESOURCE_TYPES, results.getOverwritten());
+    }
+
+    //KEYCLOAK-3042
+    @Test
+    public void testOverwriteExistingClientWithRoles() {
+        setOverwrite();
+
+        ClientRepresentation client = adminClient.realm(MASTER).clients().findByClientId("broker").get(0);
+        List<RoleRepresentation> clientRoles = adminClient.realm(MASTER).clients().get(client.getId()).roles().list();
+        
+        Map<String, List<RoleRepresentation>> clients = new HashMap<>();
+        clients.put(client.getClientId(), clientRoles);
+        
+        RolesRepresentation roles = new RolesRepresentation();
+        roles.setClient(clients);
+        
+        piRep.setClients(Arrays.asList(client));
+        piRep.setRoles(roles);
+                
+        doImport();
+    }
+
+    // KEYCLOAK-6058
+    @Test
+    public void testOverwriteExistingInternalClient() {
+        setOverwrite();
+        ClientRepresentation client = adminClient.realm(MASTER).clients().findByClientId("security-admin-console").get(0);
+        ClientRepresentation client2 = adminClient.realm(MASTER).clients().findByClientId("master-realm").get(0);
+        piRep.setClients(Arrays.asList(client, client2));
+
+        PartialImportResults result = doImport();
+        Assert.assertEquals(0, result.getOverwritten());
     }
 
 }

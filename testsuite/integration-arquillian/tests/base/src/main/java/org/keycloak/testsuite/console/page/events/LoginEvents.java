@@ -19,6 +19,7 @@ package org.keycloak.testsuite.console.page.events;
 
 import org.keycloak.testsuite.console.page.fragment.DataTable;
 import org.keycloak.testsuite.page.Form;
+import org.keycloak.testsuite.util.UIUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
@@ -50,17 +51,14 @@ public class LoginEvents extends Events {
         private LoginEventsTableFilterForm filterForm;
 
         public void update() {
-            waitForBody();
             clickHeaderButton("Update");
         }
 
         public void reset() {
-            waitForBody();
             clickHeaderButton("Reset");
         }
 
         public void filter() {
-            waitForBody();
             filterButton.click();
         }
 
@@ -92,11 +90,11 @@ public class LoginEvents extends Events {
             }
 
             public void setClientInput(String value) {
-                setInputValue(clientInput, value);
+                UIUtils.setTextInputValue(clientInput, value);
             }
 
             public void setUserInput(String value) {
-                setInputValue(userInput, value);
+                UIUtils.setTextInputValue(userInput, value);
             }
         }
     }

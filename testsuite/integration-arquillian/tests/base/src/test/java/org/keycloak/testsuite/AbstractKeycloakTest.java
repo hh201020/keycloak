@@ -16,52 +16,88 @@
  */
 package org.keycloak.testsuite;
 
-import java.io.File;
-import org.keycloak.testsuite.arquillian.TestContext;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import javax.ws.rs.NotFoundException;
+import io.appium.java_client.AppiumDriver;
+import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import org.jboss.arquillian.container.test.api.RunAsClient;
 import org.jboss.arquillian.drone.api.annotation.Drone;
 import org.jboss.arquillian.graphene.page.Page;
-import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.jboss.logging.Logger;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.runner.RunWith;
 import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.AuthenticationManagementResource;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.RealmsResource;
-import org.keycloak.models.Constants;
+import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.admin.client.resource.UsersResource;
+import org.keycloak.common.util.KeycloakUriBuilder;
+import org.keycloak.common.util.Time;
 import org.keycloak.representations.idm.RealmRepresentation;
+import org.keycloak.representations.idm.RequiredActionProviderRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
+import org.keycloak.testsuite.admin.ApiUtil;
 import org.keycloak.testsuite.arquillian.AuthServerTestEnricher;
+import org.keycloak.testsuite.arquillian.KcArquillian;
 import org.keycloak.testsuite.arquillian.SuiteContext;
-import org.keycloak.testsuite.auth.page.WelcomePage;
-import org.keycloak.testsuite.util.OAuthClient;
-import org.openqa.selenium.WebDriver;
+import org.keycloak.testsuite.arquillian.TestContext;
+import org.keycloak.testsuite.auth.page.AuthRealm;
 import org.keycloak.testsuite.auth.page.AuthServer;
 import org.keycloak.testsuite.auth.page.AuthServerContextRoot;
-import org.keycloak.testsuite.auth.page.AuthRealm;
-import static org.keycloak.testsuite.auth.page.AuthRealm.ADMIN;
-import static org.keycloak.testsuite.auth.page.AuthRealm.MASTER;
+import org.keycloak.testsuite.auth.page.WelcomePage;
 import org.keycloak.testsuite.auth.page.account.Account;
 import org.keycloak.testsuite.auth.page.login.OIDCLogin;
 import org.keycloak.testsuite.auth.page.login.UpdatePassword;
-import org.keycloak.testsuite.util.Timer;
-import org.keycloak.testsuite.util.WaitUtils;
+import org.keycloak.testsuite.client.KeycloakTestingClient;
+import org.keycloak.testsuite.util.AdminClientUtil;
+import org.keycloak.testsuite.util.DroneUtils;
+import org.keycloak.testsuite.util.OAuthClient;
+import org.keycloak.testsuite.util.TestCleanup;
+import org.keycloak.testsuite.util.TestEventsLogger;
+import org.openqa.selenium.WebDriver;
+import org.wildfly.extras.creaper.commands.undertow.AddUndertowListener;
+import org.wildfly.extras.creaper.commands.undertow.RemoveUndertowListener;
+import org.wildfly.extras.creaper.commands.undertow.SslVerifyClient;
+import org.wildfly.extras.creaper.commands.undertow.UndertowListenerType;
+import org.wildfly.extras.creaper.core.CommandFailedException;
+import org.wildfly.extras.creaper.core.online.CliException;
+import org.wildfly.extras.creaper.core.online.OnlineManagementClient;
+import org.wildfly.extras.creaper.core.online.operations.Address;
+import org.wildfly.extras.creaper.core.online.operations.OperationException;
+import org.wildfly.extras.creaper.core.online.operations.Operations;
+import org.wildfly.extras.creaper.core.online.operations.admin.Administration;
+
+import javax.ws.rs.NotFoundException;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeoutException;
+
 import static org.keycloak.testsuite.admin.Users.setPasswordFor;
-import static org.keycloak.testsuite.admin.Users.setPasswordFor;
+import static org.keycloak.testsuite.auth.page.AuthRealm.ADMIN;
+import static org.keycloak.testsuite.auth.page.AuthRealm.MASTER;
+import static org.keycloak.testsuite.util.URLUtils.navigateToUri;
 
 /**
  *
  * @author tkyjovsk
  */
-@RunWith(Arquillian.class)
+@RunWith(KcArquillian.class)
 @RunAsClient
 public abstract class AbstractKeycloakTest {
+
+    protected static final boolean AUTH_SERVER_SSL_REQUIRED = Boolean.parseBoolean(System.getProperty("auth.server.ssl.required", "false"));
+
+    protected static final String ENGLISH_LOCALE_NAME = "English";
 
     protected Logger log = Logger.getLogger(this.getClass());
 
@@ -73,7 +109,10 @@ public abstract class AbstractKeycloakTest {
 
     protected Keycloak adminClient;
 
-    protected OAuthClient oauthClient;
+    protected KeycloakTestingClient testingClient;
+
+    @ArquillianResource
+    protected OAuthClient oauth;
 
     protected List<RealmRepresentation> testRealmReps;
 
@@ -100,55 +139,211 @@ public abstract class AbstractKeycloakTest {
 
     protected UserRepresentation adminUser;
 
-    @Before
-    public void beforeAbstractKeycloakTest() {
-        adminClient = Keycloak.getInstance(AuthServerTestEnricher.getAuthServerContextRoot() + "/auth",
-                MASTER, ADMIN, ADMIN, Constants.ADMIN_CLI_CLIENT_ID);
-        oauthClient = new OAuthClient(AuthServerTestEnricher.getAuthServerContextRoot() + "/auth");
+    private PropertiesConfiguration constantsProperties;
 
-        
+    private boolean resetTimeOffset;
+
+    @BeforeClass
+    public static void setUpAuthServer() throws Exception {
+        if (AUTH_SERVER_SSL_REQUIRED) {
+            enableHTTPSForAuthServer();
+        }
+    }
+
+    @Before
+    public void beforeAbstractKeycloakTest() throws Exception {
+        adminClient = testContext.getAdminClient();
+        if (adminClient == null || adminClient.isClosed()) {
+            reconnectAdminClient();
+        }
+
+        getTestingClient();
+
         adminUser = createAdminUserRepresentation();
 
         setDefaultPageUriParameters();
 
-        driverSettings();
+        TestEventsLogger.setDriver(driver);
 
-        if (!suiteContext.isAdminPasswordUpdated()) {
-            log.debug("updating admin password");
+        // The backend cluster nodes may not be yet started. Password will be updated later for cluster setup.
+        if (!AuthServerTestEnricher.AUTH_SERVER_CLUSTER) {
             updateMasterAdminPassword();
-            suiteContext.setAdminPasswordUpdated(true);
         }
 
-        importTestRealms();
+        beforeAbstractKeycloakTestRealmImport();
+
+        if (testContext.getTestRealmReps().isEmpty()) {
+            importTestRealms();
+
+            if (!isImportAfterEachMethod()) {
+                testContext.setTestRealmReps(testRealmReps);
+            }
+
+            afterAbstractKeycloakTestRealmImport();
+        }
+
+        oauth.init(adminClient, driver);
+
     }
+
+    public void reconnectAdminClient() throws Exception {
+        if (adminClient != null && !adminClient.isClosed()) {
+            adminClient.close();
+        }
+
+        String authServerContextRoot = suiteContext.getAuthServerInfo().getContextRoot().toString();
+        adminClient = AdminClientUtil.createAdminClient(suiteContext.isAdapterCompatTesting(), authServerContextRoot);
+        testContext.setAdminClient(adminClient);
+    }
+
+    protected void beforeAbstractKeycloakTestRealmImport() throws Exception {
+    }
+    protected void postAfterAbstractKeycloak() {
+    }
+
+    protected void afterAbstractKeycloakTestRealmImport() {}
 
     @After
     public void afterAbstractKeycloakTest() {
-//        removeTestRealms(); // keeping test realms after test to be able to inspect failures, instead deleting existing realms before import
-//        keycloak.close(); // keeping admin connection open
+        if (resetTimeOffset) {
+            resetTimeOffset();
+        }
+
+        if (isImportAfterEachMethod()) {
+            log.info("removing test realms after test method");
+            for (RealmRepresentation testRealm : testRealmReps) {
+                removeRealm(testRealm.getRealm());
+            }
+        } else {
+            log.info("calling all TestCleanup");
+            // Logout all users after the test
+            List<RealmRepresentation> realms = testContext.getTestRealmReps();
+            for (RealmRepresentation realm : realms) {
+                adminClient.realm(realm.getRealm()).logoutAll();
+            }
+
+            // Cleanup objects
+            for (TestCleanup cleanup : testContext.getCleanups().values()) {
+                try {
+                    if (cleanup != null) cleanup.executeCleanup();
+                } catch (Exception e) {
+                    log.error("failed cleanup!", e);
+                    throw new RuntimeException(e);
+                }
+            }
+            testContext.getCleanups().clear();
+        }
+
+        postAfterAbstractKeycloak();
+
+        // Remove all browsers from queue
+        DroneUtils.resetQueue();
     }
 
-    private void updateMasterAdminPassword() {
-        welcomePage.navigateTo();
-        if (!welcomePage.isPasswordSet()) {
-            welcomePage.setPassword("admin", "admin");
+    protected TestCleanup getCleanup(String realmName) {
+        return testContext.getOrCreateCleanup(realmName);
+    }
+
+    protected TestCleanup getCleanup() {
+        return getCleanup("test");
+    }
+
+    protected boolean isImportAfterEachMethod() {
+        return false;
+    }
+
+    protected void updateMasterAdminPassword() {
+        if (!suiteContext.isAdminPasswordUpdated()) {
+            log.debug("updating admin password");
+
+            welcomePage.navigateTo();
+            if (!welcomePage.isPasswordSet()) {
+                welcomePage.setPassword("admin", "admin");
+            }
+
+            suiteContext.setAdminPasswordUpdated(true);
         }
     }
 
     public void deleteAllCookiesForMasterRealm() {
-        masterRealmPage.navigateTo();
-        log.debug("deleting cookies in master realm");
+        deleteAllCookiesForRealm(accountPage);
+    }
+
+    protected void deleteAllCookiesForRealm(Account realmAccountPage) {
+        // masterRealmPage.navigateTo();
+        realmAccountPage.navigateTo(); // Because IE webdriver freezes when loading a JSON page (realm page), we need to use this alternative
+        log.info("deleting cookies in '" + realmAccountPage.getAuthRealm() + "' realm");
         driver.manage().deleteAllCookies();
     }
 
-    protected void driverSettings() {
-        driver.manage().timeouts().pageLoadTimeout(WaitUtils.PAGELOAD_TIMEOUT, TimeUnit.MILLISECONDS);
-        driver.manage().window().maximize();
+    protected void deleteAllCookiesForRealm(String realmName) {
+        // masterRealmPage.navigateTo();
+        navigateToUri(accountPage.getAuthRoot() + "/realms/" + realmName + "/account"); // Because IE webdriver freezes when loading a JSON page (realm page), we need to use this alternative
+        log.info("deleting cookies in '" + realmName + "' realm");
+        driver.manage().deleteAllCookies();
+    }
+
+    // this is useful mainly for smartphones as cookies deletion doesn't work there
+    protected void deleteAllSessionsInRealm(String realmName) {
+        log.info("removing all sessions from '" + realmName + "' realm...");
+        try {
+            adminClient.realm(realmName).logoutAll();
+            log.info("sessions successfully deleted");
+        }
+        catch (NotFoundException e) {
+            log.warn("realm not found");
+        }
+    }
+
+    protected void resetRealmSession(String realmName) {
+        deleteAllCookiesForRealm(realmName);
+
+        if (driver instanceof AppiumDriver) { // smartphone drivers don't support cookies deletion
+            try {
+                log.info("resetting realm session");
+
+                final RealmRepresentation realmRep = adminClient.realm(realmName).toRepresentation();
+
+                deleteAllSessionsInRealm(realmName); // logout users
+
+                if (realmRep.isInternationalizationEnabled()) { // reset the locale
+                    String locale = getDefaultLocaleName(realmRep.getRealm());
+                    loginPage.localeDropdown().selectByText(locale);
+                    log.info("locale reset to " + locale);
+                }
+            } catch (NotFoundException e) {
+                log.warn("realm not found");
+            }
+        }
+    }
+
+    protected String getDefaultLocaleName(String realmName) {
+        return ENGLISH_LOCALE_NAME;
     }
 
     public void setDefaultPageUriParameters() {
         masterRealmPage.setAuthRealm(MASTER);
         loginPage.setAuthRealm(MASTER);
+    }
+
+    public KeycloakTestingClient getTestingClient() {
+        if (testingClient == null) {
+            testingClient = testContext.getTestingClient();
+            if (testingClient == null) {
+                String authServerContextRoot = suiteContext.getAuthServerInfo().getContextRoot().toString();
+                testingClient = KeycloakTestingClient.getInstance(authServerContextRoot + "/auth");
+                testContext.setTestingClient(testingClient);
+            }
+        }
+        return testingClient;
+    }
+
+    public TestContext getTestContext() {
+        return testContext;
+    }
+
+    public Keycloak getAdminClient() {
+        return adminClient;
     }
 
     public abstract void addTestRealms(List<RealmRepresentation> testRealms);
@@ -171,13 +366,6 @@ public abstract class AbstractKeycloakTest {
         }
     }
 
-    public void removeTestRealms() {
-        log.info("removing test realms");
-        for (RealmRepresentation testRealm : testRealmReps) {
-            removeRealm(testRealm);
-        }
-    }
-
     private UserRepresentation createAdminUserRepresentation() {
         UserRepresentation adminUserRep = new UserRepresentation();
         adminUserRep.setUsername(ADMIN);
@@ -186,24 +374,177 @@ public abstract class AbstractKeycloakTest {
     }
 
     public void importRealm(RealmRepresentation realm) {
-        log.debug("importing realm: " + realm.getRealm());
-        try { // TODO - figure out a way how to do this without try-catch
-            RealmResource realmResource = adminClient.realms().realm(realm.getRealm());
-            RealmRepresentation rRep = realmResource.toRepresentation();
-            log.debug("realm already exists on server, re-importing");
-            realmResource.remove();
-        } catch (NotFoundException nfe) {
+        log.debug("--importing realm: " + realm.getRealm());
+        try {
+            adminClient.realms().realm(realm.getRealm()).remove();
+            log.debug("realm already existed on server, re-importing");
+        } catch (NotFoundException ignore) {
             // expected when realm does not exist
         }
         adminClient.realms().create(realm);
     }
 
-    public void removeRealm(RealmRepresentation realm) {
-        adminClient.realms().realm(realm.getRealm()).remove();
+    public void removeRealm(String realmName) {
+        log.info("removing realm: " + realmName);
+        try {
+            adminClient.realms().realm(realmName).remove();
+        } catch (NotFoundException e) {
+        }
     }
-    
+
     public RealmsResource realmsResouce() {
         return adminClient.realms();
     }
 
+    /**
+     * Creates a user in the given realm and returns its ID.
+     *
+     * @param realm           Realm name
+     * @param username        Username
+     * @param password        Password
+     * @param requiredActions
+     * @return ID of the newly created user
+     */
+    public String createUser(String realm, String username, String password, String... requiredActions) {
+        List<String> requiredUserActions = Arrays.asList(requiredActions);
+
+        UserRepresentation homer = new UserRepresentation();
+        homer.setEnabled(true);
+        homer.setUsername(username);
+        homer.setRequiredActions(requiredUserActions);
+
+        return ApiUtil.createUserAndResetPasswordWithAdminClient(adminClient.realm(realm), homer, password);
+    }
+
+    public void setRequiredActionEnabled(String realm, String requiredAction, boolean enabled, boolean defaultAction) {
+        AuthenticationManagementResource managementResource = adminClient.realm(realm).flows();
+
+        RequiredActionProviderRepresentation action = managementResource.getRequiredAction(requiredAction);
+        action.setEnabled(enabled);
+        action.setDefaultAction(defaultAction);
+
+        managementResource.updateRequiredAction(requiredAction, action);
+    }
+
+    public void setRequiredActionEnabled(String realm, String userId, String requiredAction, boolean enabled) {
+        UsersResource usersResource = adminClient.realm(realm).users();
+
+        UserResource userResource = usersResource.get(userId);
+        UserRepresentation userRepresentation = userResource.toRepresentation();
+
+        List<String> requiredActions = userRepresentation.getRequiredActions();
+        if (enabled && !requiredActions.contains(requiredAction)) {
+            requiredActions.add(requiredAction);
+        } else if (!enabled && requiredActions.contains(requiredAction)) {
+            requiredActions.remove(requiredAction);
+        }
+
+        userResource.update(userRepresentation);
+    }
+
+    /**
+     * Sets time of day by calculating time offset and using setTimeOffset() to set it.
+     *
+     * @param hour hour of day
+     * @param minute minute
+     * @param second second
+     */
+    public void setTimeOfDay(int hour, int minute, int second) {
+        setTimeOfDay(hour, minute, second, 0);
+    }
+
+    /**
+     * Sets time of day by calculating time offset and using setTimeOffset() to set it.
+     *
+     * @param hour hour of day
+     * @param minute minute
+     * @param second second
+     * @param addSeconds additional seconds to add to offset time
+     */
+    public void setTimeOfDay(int hour, int minute, int second, int addSeconds) {
+        Calendar now = Calendar.getInstance();
+        now.set(Calendar.HOUR_OF_DAY, hour);
+        now.set(Calendar.MINUTE, minute);
+        now.set(Calendar.SECOND, second);
+        int offset = (int) ((now.getTime().getTime() - System.currentTimeMillis()) / 1000);
+
+        setTimeOffset(offset + addSeconds);
+    }
+
+    /**
+     * Sets time offset in seconds that will be added to Time.currentTime() and Time.currentTimeMillis() both for client and server.
+     *
+     * @param offset
+     */
+    public void setTimeOffset(int offset) {
+        String response = invokeTimeOffset(offset);
+        resetTimeOffset = offset != 0;
+        log.debugv("Set time offset, response {0}", response);
+    }
+
+    public void resetTimeOffset() {
+        String response = invokeTimeOffset(0);
+        resetTimeOffset = false;
+        log.debugv("Reset time offset, response {0}", response);
+    }
+
+    public int getCurrentTime() {
+        return Time.currentTime();
+    }
+
+    private String invokeTimeOffset(int offset) {
+        // adminClient depends on Time.offset for auto-refreshing tokens
+        Time.setOffset(offset);
+        Map result = testingClient.testing().setTimeOffset(Collections.singletonMap("offset", String.valueOf(offset)));
+        return String.valueOf(result);
+    }
+
+    private void loadConstantsProperties() throws ConfigurationException {
+        constantsProperties = new PropertiesConfiguration(System.getProperty("testsuite.constants"));
+        constantsProperties.setThrowExceptionOnMissing(true);
+    }
+
+    protected PropertiesConfiguration getConstantsProperties() throws ConfigurationException {
+        if (constantsProperties == null) {
+            loadConstantsProperties();
+        }
+        return constantsProperties;
+    }
+
+    public URI getAuthServerRoot() {
+        try {
+            return KeycloakUriBuilder.fromUri(suiteContext.getAuthServerInfo().getContextRoot().toURI()).path("/auth/").build();
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public Logger getLogger() {
+        return log;
+    }
+
+    private static void enableHTTPSForAuthServer() throws IOException, CommandFailedException, TimeoutException, InterruptedException, CliException, OperationException {
+        OnlineManagementClient client = AuthServerTestEnricher.getManagementClient();
+        Administration administration = new Administration(client);
+        Operations operations = new Operations(client);
+
+        if(!operations.exists(Address.coreService("management").and("security-realm", "UndertowRealm"))) {
+            client.execute("/core-service=management/security-realm=UndertowRealm:add()");
+            client.execute("/core-service=management/security-realm=UndertowRealm/server-identity=ssl:add(keystore-relative-to=jboss.server.config.dir,keystore-password=secret,keystore-path=keycloak.jks");
+            client.execute("/core-service=management/security-realm=UndertowRealm/authentication=truststore:add(keystore-relative-to=jboss.server.config.dir,keystore-password=secret,keystore-path=keycloak.truststore");
+        }
+
+        client.apply(new RemoveUndertowListener.Builder(UndertowListenerType.HTTPS_LISTENER, "https")
+                .forDefaultServer());
+
+        administration.reloadIfRequired();
+
+        client.apply(new AddUndertowListener.HttpsBuilder("https", "default-server", "https")
+                .securityRealm("UndertowRealm")
+                .verifyClient(SslVerifyClient.REQUESTED)
+                .build());
+
+        administration.reloadIfRequired();
+        client.close();
+    }
 }

@@ -45,9 +45,7 @@ public abstract class KeycloakDependencyProcessor implements DeploymentUnitProce
     @Override
     public void deploy(DeploymentPhaseContext phaseContext) throws DeploymentUnitProcessingException {
         final DeploymentUnit deploymentUnit = phaseContext.getDeploymentUnit();
-
-        String deploymentName = deploymentUnit.getName();
-        if (!KeycloakAdapterConfigService.getInstance().isSecureDeployment(deploymentName)) {
+        if (!KeycloakAdapterConfigService.getInstance().isSecureDeployment(deploymentUnit)) {
             WarMetaData warMetaData = deploymentUnit.getAttachment(WarMetaData.ATTACHMENT_KEY);
             if (warMetaData == null) {
                 return;
@@ -65,9 +63,9 @@ public abstract class KeycloakDependencyProcessor implements DeploymentUnitProce
         final ModuleSpecification moduleSpecification = deploymentUnit.getAttachment(Attachments.MODULE_SPECIFICATION);
         final ModuleLoader moduleLoader = Module.getBootModuleLoader();
         addCommonModules(moduleSpecification, moduleLoader);
-        addPlatformSpecificModules(moduleSpecification, moduleLoader);
+        addPlatformSpecificModules(phaseContext, moduleSpecification, moduleLoader);
     }
-
+    
     private void addCommonModules(ModuleSpecification moduleSpecification, ModuleLoader moduleLoader) {
         // ModuleDependency(ModuleLoader moduleLoader, ModuleIdentifier identifier, boolean optional, boolean export, boolean importServices, boolean userSpecified)
         moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, KEYCLOAK_JBOSS_CORE_ADAPTER, false, false, false, false));
@@ -76,7 +74,7 @@ public abstract class KeycloakDependencyProcessor implements DeploymentUnitProce
         moduleSpecification.addSystemDependency(new ModuleDependency(moduleLoader, KEYCLOAK_COMMON, false, false, false, false));
     }
 
-    abstract protected void addPlatformSpecificModules(ModuleSpecification moduleSpecification, ModuleLoader moduleLoader);
+    abstract protected void addPlatformSpecificModules(DeploymentPhaseContext phaseContext, ModuleSpecification moduleSpecification, ModuleLoader moduleLoader);
 
     @Override
     public void undeploy(DeploymentUnit du) {

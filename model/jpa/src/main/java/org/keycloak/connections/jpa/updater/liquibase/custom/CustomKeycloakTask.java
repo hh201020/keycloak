@@ -17,11 +17,6 @@
 
 package org.keycloak.connections.jpa.updater.liquibase.custom;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.util.ArrayList;
-import java.util.List;
-
 import liquibase.change.custom.CustomSqlChange;
 import liquibase.database.Database;
 import liquibase.database.jvm.JdbcConnection;
@@ -31,12 +26,18 @@ import liquibase.exception.ValidationErrors;
 import liquibase.resource.ResourceAccessor;
 import liquibase.snapshot.SnapshotGeneratorFactory;
 import liquibase.statement.SqlStatement;
+import liquibase.structure.core.Schema;
 import liquibase.structure.core.Table;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.updater.liquibase.LiquibaseJpaUpdaterProvider;
 import org.keycloak.connections.jpa.updater.liquibase.ThreadLocalSessionContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.services.DefaultKeycloakSessionFactory;
+
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -129,6 +130,7 @@ public abstract class CustomKeycloakTask implements CustomSqlChange {
 
     // get Table name for sql selects
     protected String getTableName(String tableName) {
-       return LiquibaseJpaUpdaterProvider.getTable(tableName, database.getDefaultSchemaName());
+        String correctedSchemaName = database.escapeObjectName(database.getDefaultSchemaName(), Schema.class);
+        return LiquibaseJpaUpdaterProvider.getTable(tableName, correctedSchemaName);
     }
 }

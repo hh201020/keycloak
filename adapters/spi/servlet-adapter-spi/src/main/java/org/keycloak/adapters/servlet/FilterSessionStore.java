@@ -111,8 +111,7 @@ public class FilterSessionStore implements AdapterSessionStore {
                     if (body == null) return new MultivaluedHashMap<String, String>();
 
                     String contentType = getContentType();
-                    contentType = contentType.toLowerCase();
-                    if (contentType.startsWith("application/x-www-form-urlencoded")) {
+                    if (contentType != null && contentType.toLowerCase().startsWith("application/x-www-form-urlencoded")) {
                         ByteArrayInputStream is = new ByteArrayInputStream(body);
                         try {
                             parameters = parseForm(is);
@@ -192,7 +191,7 @@ public class FilterSessionStore implements AdapterSessionStore {
                 @Override
                 public long getDateHeader(String name) {
                    if (!needRequestRestore) return super.getDateHeader(name);
-                   throw new RuntimeException("This method is not supported in a restored authenticated request");
+                   return -1;
                 }
 
                 @Override
@@ -305,6 +304,7 @@ public class FilterSessionStore implements AdapterSessionStore {
 
                 @Override
                 public Principal getUserPrincipal() {
+                    if (account == null) return null;
                     return account.getPrincipal();
                 }
 

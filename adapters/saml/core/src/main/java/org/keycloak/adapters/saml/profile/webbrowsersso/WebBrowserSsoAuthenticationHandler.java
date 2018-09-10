@@ -79,11 +79,13 @@ public class WebBrowserSsoAuthenticationHandler extends AbstractSamlAuthenticati
         builder.issuer(issuerURL);
         BaseSAML2BindingBuilder binding = new BaseSAML2BindingBuilder().relayState(relayState);
         if (deployment.getIDP().getSingleLogoutService().signResponse()) {
-            binding.signatureAlgorithm(deployment.getSignatureAlgorithm())
-                    .signWith(deployment.getSigningKeyPair())
-                    .signDocument();
             if (deployment.getSignatureCanonicalizationMethod() != null)
                 binding.canonicalizationMethod(deployment.getSignatureCanonicalizationMethod());
+            binding.signatureAlgorithm(deployment.getSignatureAlgorithm())
+                    .signWith(null, deployment.getSigningKeyPair())
+                    .signDocument();
+            // TODO: As part of KEYCLOAK-3810, add KeyID to the SAML document
+            //   <related DocumentBuilder>.addExtension(new KeycloakKeySamlExtensionGenerator(<key ID>));
         }
 
 
@@ -110,8 +112,13 @@ public class WebBrowserSsoAuthenticationHandler extends AbstractSamlAuthenticati
                 .destination(deployment.getIDP().getSingleLogoutService().getRequestBindingUrl());
         BaseSAML2BindingBuilder binding = new BaseSAML2BindingBuilder();
         if (deployment.getIDP().getSingleLogoutService().signRequest()) {
-            binding.signWith(deployment.getSigningKeyPair())
+            if (deployment.getSignatureCanonicalizationMethod() != null)
+                binding.canonicalizationMethod(deployment.getSignatureCanonicalizationMethod());
+            binding.signatureAlgorithm(deployment.getSignatureAlgorithm());
+            binding.signWith(null, deployment.getSigningKeyPair())
                     .signDocument();
+            // TODO: As part of KEYCLOAK-3810, add KeyID to the SAML document
+            //   <related DocumentBuilder>.addExtension(new KeycloakKeySamlExtensionGenerator(<key ID>));
         }
 
         binding.relayState("logout");

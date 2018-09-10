@@ -24,11 +24,93 @@
     <parent>
         <groupId>org.keycloak.testsuite</groupId>
         <artifactId>integration-arquillian-tests-other</artifactId>
-        <version>1.9.1.Final-SNAPSHOT</version>
+        <version>4.5.0.Final-SNAPSHOT</version>
     </parent>
 
     <artifactId>integration-arquillian-tests-console</artifactId>
 
     <name>Admin Console UI Tests</name>
-    
+
+    <properties>
+        <keycloak.theme.dir>${auth.server.home}/themes</keycloak.theme.dir>
+        <supportedBrowsers>firefox|chrome|internetExplorer</supportedBrowsers>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>properties-maven-plugin</artifactId>
+                <version>1.0.0</version>
+                <executions>
+                    <execution>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>read-project-properties</goal>
+                        </goals>
+                        <configuration>
+                            <files>
+                                <file>${testsuite.constants}</file>
+                            </files>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireProperty>
+                                    <property>browser</property>
+                                    <message>Browser property must be set!</message>
+                                    <regex>${supportedBrowsers}</regex>
+                                    <regexMessage>Unsupported browser "${browser}"! Only the following are supported: ${supportedBrowsers}</regexMessage>
+                                </requireProperty>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>copy-theme-files</id>
+                            <phase>process-resources</phase>
+                            <goals>
+                                <goal>copy-resources</goal>
+                            </goals>
+                            <configuration>
+                                <outputDirectory>${keycloak.theme.dir}</outputDirectory>
+                                <resources>
+                                    <resource>
+                                        <directory>src/main/resources/themes</directory>
+                                        <filtering>true</filtering>
+                                    </resource>
+                                </resources>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <configuration>
+                        <systemProperties>
+                            <keycloak.theme.dir>${keycloak.theme.dir}</keycloak.theme.dir>
+                        </systemProperties>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
 </project>

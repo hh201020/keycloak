@@ -17,17 +17,17 @@
 
 package org.keycloak.testsuite.adapter;
 
-import java.io.File;
-import java.io.IOException;
-import java.net.URL;
-import java.nio.file.Paths;
-
 import org.apache.commons.io.IOUtils;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.junit.Assert;
+
+import java.io.File;
+import java.io.IOException;
+import java.net.URL;
+import java.nio.file.Paths;
 
 /**
  *
@@ -38,6 +38,7 @@ public abstract class AbstractExampleAdapterTest extends AbstractAdapterTest {
     public static final String EXAMPLES_HOME;
     public static final String EXAMPLES_VERSION_SUFFIX;
     public static final String EXAMPLES_HOME_DIR;
+    public static final String TEST_APPS_HOME_DIR;
     public static final String EXAMPLES_WEB_XML;
 
     static {
@@ -49,8 +50,8 @@ public abstract class AbstractExampleAdapterTest extends AbstractAdapterTest {
         Assert.assertNotNull("Property ${examples.version.suffix} must bet set.", EXAMPLES_VERSION_SUFFIX);
         System.out.println(EXAMPLES_VERSION_SUFFIX);
 
-        EXAMPLES_HOME_DIR = EXAMPLES_HOME + "/keycloak-examples-" + EXAMPLES_VERSION_SUFFIX;
-
+        EXAMPLES_HOME_DIR = EXAMPLES_HOME + "/example-realms";
+        TEST_APPS_HOME_DIR = EXAMPLES_HOME + "/test-apps-dist";
         EXAMPLES_WEB_XML = EXAMPLES_HOME + "/web.xml";
     }
 
@@ -62,7 +63,7 @@ public abstract class AbstractExampleAdapterTest extends AbstractAdapterTest {
 
     protected static WebArchive exampleDeployment(String name, String contextPath) throws IOException {
         URL webXML = Paths.get(EXAMPLES_WEB_XML).toUri().toURL();
-        String webXmlContent = IOUtils.toString(webXML.openStream())
+        String webXmlContent = IOUtils.toString(webXML.openStream(), "UTF-8")
                 .replace("%CONTEXT_PATH%", contextPath);
         WebArchive webArchive = ShrinkWrap.createFromZipFile(WebArchive.class,
                 new File(EXAMPLES_HOME + "/" + name + "-" + EXAMPLES_VERSION_SUFFIX + ".war"))

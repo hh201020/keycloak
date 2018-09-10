@@ -30,11 +30,12 @@ import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
-import javax.ws.rs.QueryParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author rodrigo.sasaki@icarros.com.br
@@ -75,6 +76,18 @@ public interface UserResource {
     @Path("remove-totp")
     public void removeTotp();
 
+    /**
+     * Disables or deletes all credentials for specific types.
+     * Type examples "otp", "password"
+     *
+     *
+     * @param credentialTypes
+     */
+    @Path("disable-credential-types")
+    @PUT
+    @Consumes(MediaType.APPLICATION_JSON)
+    public void disableCredentialType(List<String> credentialTypes);
+
     @PUT
     @Path("reset-password")
     public void resetPassword(CredentialRepresentation credentialRepresentation);
@@ -97,13 +110,32 @@ public interface UserResource {
     @Deprecated
     public void resetPasswordEmail(@QueryParam("client_id") String clientId);
 
+    /**
+     * Sends an email to the user with a link within it.  If they click on the link they will be asked to perform some actions
+     * i.e. reset password, update profile, etc.
+     *
+     *
+     * @param actions
+     */
     @PUT
     @Path("execute-actions-email")
     public void executeActionsEmail(List<String> actions);
 
+    /**
+     * Sends an email to the user with a link within it.  If they click on the link they will be asked to perform some actions
+     * i.e. reset password, update profile, etc.
+     *
+     * If redirectUri is not null, then you must specify a client id.  This will set the URI you want the flow to link
+     * to after the email link is clicked and actions completed.  If both parameters are null, then no page is linked to
+     * at the end of the flow.
+     *
+     * @param clientId
+     * @param redirectUri
+     * @param actions
+     */
     @PUT
     @Path("execute-actions-email")
-    public void executeActionsEmail(@QueryParam("client_id") String clientId, List<String> actions);
+    public void executeActionsEmail(@QueryParam("client_id") String clientId, @QueryParam("redirect_uri") String redirectUri, List<String> actions);
 
     @PUT
     @Path("send-verify-email")
@@ -116,6 +148,10 @@ public interface UserResource {
     @GET
     @Path("sessions")
     public List<UserSessionRepresentation> getUserSessions();
+
+    @GET
+    @Path("offline-sessions/{clientId}")
+    List<UserSessionRepresentation> getOfflineSessions(@PathParam("clientId") String clientId);
 
     @GET
     @Path("federated-identity")
@@ -132,4 +168,17 @@ public interface UserResource {
     @Path("role-mappings")
     public RoleMappingResource roles();
 
+
+    @GET
+    @Path("consents")
+    public List<Map<String, Object>> getConsents();
+
+    @DELETE
+    @Path("consents/{client}")
+    public void revokeConsent(@PathParam("client") String clientId);
+
+    @POST
+    @Path("impersonation")
+    @Produces(MediaType.APPLICATION_JSON)
+    Map<String, Object> impersonate();
 }

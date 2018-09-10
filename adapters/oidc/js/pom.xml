@@ -21,7 +21,7 @@
 	<parent>
 		<artifactId>keycloak-parent</artifactId>
 		<groupId>org.keycloak</groupId>
-		<version>1.9.1.Final-SNAPSHOT</version>
+		<version>4.5.0.Final-SNAPSHOT</version>
         <relativePath>../../../pom.xml</relativePath>
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
@@ -38,6 +38,11 @@
             <plugin>
                 <groupId>com.samaxes.maven</groupId>
                 <artifactId>minify-maven-plugin</artifactId>
+                <configuration>
+                    <jsEngine>CLOSURE</jsEngine>
+                    <closureLanguageIn>ECMASCRIPT5</closureLanguageIn>
+                    <closureCreateSourceMap>true</closureCreateSourceMap>
+                </configuration>
                 <executions>
                     <execution>
                         <id>min-js</id>
@@ -53,6 +58,25 @@
                             <webappTargetDir>${project.build.directory}/classes</webappTargetDir>
                             <jsTargetDir>.</jsTargetDir>
                             <jsFinalFile>keycloak.js</jsFinalFile>
+                        </configuration>
+                        <goals>
+                            <goal>minify</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>min-authz-js</id>
+                        <phase>compile</phase>
+                        <configuration>
+                            <charset>utf-8</charset>
+                            <webappSourceDir>${basedir}/src/main/resources</webappSourceDir>
+                            <jsSourceDir>.</jsSourceDir>
+                            <jsSourceFiles>
+                                <jsSourceFile>keycloak-authz.js</jsSourceFile>
+                            </jsSourceFiles>
+
+                            <webappTargetDir>${project.build.directory}/classes</webappTargetDir>
+                            <jsTargetDir>.</jsTargetDir>
+                            <jsFinalFile>keycloak-authz.js</jsFinalFile>
                         </configuration>
                         <goals>
                             <goal>minify</goal>

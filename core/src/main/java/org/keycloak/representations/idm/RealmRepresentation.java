@@ -18,8 +18,14 @@
 package org.keycloak.representations.idm;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.keycloak.common.util.MultivaluedHashMap;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -32,14 +38,20 @@ public class RealmRepresentation {
     protected String displayNameHtml;
     protected Integer notBefore;
     protected Boolean revokeRefreshToken;
+    protected Integer refreshTokenMaxReuse;
     protected Integer accessTokenLifespan;
     protected Integer accessTokenLifespanForImplicitFlow;
     protected Integer ssoSessionIdleTimeout;
     protected Integer ssoSessionMaxLifespan;
     protected Integer offlineSessionIdleTimeout;
+    // KEYCLOAK-7688 Offline Session Max for Offline Token
+    protected Boolean offlineSessionMaxLifespanEnabled;
+    protected Integer offlineSessionMaxLifespan;
     protected Integer accessCodeLifespan;
     protected Integer accessCodeLifespanUserAction;
     protected Integer accessCodeLifespanLogin;
+    protected Integer actionTokenGeneratedByAdminLifespan;
+    protected Integer actionTokenGeneratedByUserLifespan;
     protected Boolean enabled;
     protected String sslRequired;
     @Deprecated
@@ -48,6 +60,8 @@ public class RealmRepresentation {
     protected Boolean registrationEmailAsUsername;
     protected Boolean rememberMe;
     protected Boolean verifyEmail;
+    protected Boolean loginWithEmailAllowed;
+    protected Boolean duplicateEmailsAllowed;
     protected Boolean resetPasswordAllowed;
     protected Boolean editUsernameAllowed;
 
@@ -58,6 +72,7 @@ public class RealmRepresentation {
 
     //--- brute force settings
     protected Boolean bruteForceProtected;
+    protected Boolean permanentLockout;
     protected Integer maxFailureWaitSeconds;
     protected Integer minimumQuickLoginWaitSeconds;
     protected Integer waitIncrementSeconds;
@@ -66,9 +81,13 @@ public class RealmRepresentation {
     protected Integer failureFactor;
     //--- end brute force settings
 
+    @Deprecated
     protected String privateKey;
+    @Deprecated
     protected String publicKey;
+    @Deprecated
     protected String certificate;
+    @Deprecated
     protected String codeSecret;
     protected RolesRepresentation roles;
     protected List<GroupRepresentation> groups;
@@ -83,12 +102,16 @@ public class RealmRepresentation {
     protected Integer otpPolicyDigits;
     protected Integer otpPolicyLookAheadWindow;
     protected Integer otpPolicyPeriod;
+    protected List<String> otpSupportedApplications;
 
     protected List<UserRepresentation> users;
+    protected List<UserRepresentation> federatedUsers;
     protected List<ScopeMappingRepresentation> scopeMappings;
     protected Map<String, List<ScopeMappingRepresentation>> clientScopeMappings;
     protected List<ClientRepresentation> clients;
-    protected List<ClientTemplateRepresentation> clientTemplates;
+    protected List<ClientScopeRepresentation> clientScopes;
+    protected List<String> defaultDefaultClientScopes;
+    protected List<String> defaultOptionalClientScopes;
     protected Map<String, String> browserSecurityHeaders;
     protected Map<String, String> smtpServer;
     protected List<UserFederationProviderRepresentation> userFederationProviders;
@@ -109,6 +132,7 @@ public class RealmRepresentation {
     private List<IdentityProviderRepresentation> identityProviders;
     private List<IdentityProviderMapperRepresentation> identityProviderMappers;
     private List<ProtocolMapperRepresentation> protocolMappers;
+    private MultivaluedHashMap<String, ComponentExportRepresentation> components;
     protected Boolean internationalizationEnabled;
     protected Set<String> supportedLocales;
     protected String defaultLocale;
@@ -120,6 +144,13 @@ public class RealmRepresentation {
     protected String directGrantFlow;
     protected String resetCredentialsFlow;
     protected String clientAuthenticationFlow;
+    protected String dockerAuthenticationFlow;
+
+    protected Map<String, String> attributes;
+
+    protected String keycloakVersion;
+
+    protected Boolean userManagedAccessAllowed;
 
     @Deprecated
     protected Boolean social;
@@ -133,6 +164,8 @@ public class RealmRepresentation {
     protected List<ApplicationRepresentation> applications;
     @Deprecated
     protected List<OAuthClientRepresentation> oauthClients;
+    @Deprecated
+    protected List<ClientTemplateRepresentation> clientTemplates;
 
     public String getId() {
         return id;
@@ -218,6 +251,14 @@ public class RealmRepresentation {
         this.revokeRefreshToken = revokeRefreshToken;
     }
 
+    public Integer getRefreshTokenMaxReuse() {
+        return refreshTokenMaxReuse;
+    }
+
+    public void setRefreshTokenMaxReuse(Integer refreshTokenMaxReuse) {
+        this.refreshTokenMaxReuse = refreshTokenMaxReuse;
+    }
+
     public Integer getAccessTokenLifespan() {
         return accessTokenLifespan;
     }
@@ -258,17 +299,43 @@ public class RealmRepresentation {
         this.offlineSessionIdleTimeout = offlineSessionIdleTimeout;
     }
 
+    // KEYCLOAK-7688 Offline Session Max for Offline Token
+    public Boolean getOfflineSessionMaxLifespanEnabled() {
+        return offlineSessionMaxLifespanEnabled;
+    }
+
+    public void setOfflineSessionMaxLifespanEnabled(Boolean offlineSessionMaxLifespanEnabled) {
+        this.offlineSessionMaxLifespanEnabled = offlineSessionMaxLifespanEnabled;
+    }
+
+    public Integer getOfflineSessionMaxLifespan() {
+        return offlineSessionMaxLifespan;
+    }
+
+    public void setOfflineSessionMaxLifespan(Integer offlineSessionMaxLifespan) {
+        this.offlineSessionMaxLifespan = offlineSessionMaxLifespan;
+    }
+
     public List<ScopeMappingRepresentation> getScopeMappings() {
         return scopeMappings;
     }
 
-    public ScopeMappingRepresentation scopeMapping(String username) {
+    public ScopeMappingRepresentation clientScopeMapping(String clientName) {
         ScopeMappingRepresentation mapping = new ScopeMappingRepresentation();
-        mapping.setClient(username);
+        mapping.setClient(clientName);
         if (scopeMappings == null) scopeMappings = new ArrayList<ScopeMappingRepresentation>();
         scopeMappings.add(mapping);
         return mapping;
     }
+
+    public ScopeMappingRepresentation clientScopeScopeMapping(String clientScopeName) {
+        ScopeMappingRepresentation mapping = new ScopeMappingRepresentation();
+        mapping.setClientScope(clientScopeName);
+        if (scopeMappings == null) scopeMappings = new ArrayList<ScopeMappingRepresentation>();
+        scopeMappings.add(mapping);
+        return mapping;
+    }
+
     @Deprecated
     public Set<String> getRequiredCredentials() {
         return requiredCredentials;
@@ -308,6 +375,22 @@ public class RealmRepresentation {
 
     public void setAccessCodeLifespanLogin(Integer accessCodeLifespanLogin) {
         this.accessCodeLifespanLogin = accessCodeLifespanLogin;
+    }
+
+    public Integer getActionTokenGeneratedByAdminLifespan() {
+        return actionTokenGeneratedByAdminLifespan;
+    }
+
+    public void setActionTokenGeneratedByAdminLifespan(Integer actionTokenGeneratedByAdminLifespan) {
+        this.actionTokenGeneratedByAdminLifespan = actionTokenGeneratedByAdminLifespan;
+    }
+
+    public Integer getActionTokenGeneratedByUserLifespan() {
+        return actionTokenGeneratedByUserLifespan;
+    }
+
+    public void setActionTokenGeneratedByUserLifespan(Integer actionTokenGeneratedByUserLifespan) {
+        this.actionTokenGeneratedByUserLifespan = actionTokenGeneratedByUserLifespan;
     }
 
     public List<String> getDefaultRoles() {
@@ -392,6 +475,22 @@ public class RealmRepresentation {
 
     public void setVerifyEmail(Boolean verifyEmail) {
         this.verifyEmail = verifyEmail;
+    }
+    
+    public Boolean isLoginWithEmailAllowed() {
+        return loginWithEmailAllowed;
+    }
+
+    public void setLoginWithEmailAllowed(Boolean loginWithEmailAllowed) {
+        this.loginWithEmailAllowed = loginWithEmailAllowed;
+    }
+    
+    public Boolean isDuplicateEmailsAllowed() {
+        return duplicateEmailsAllowed;
+    }
+
+    public void setDuplicateEmailsAllowed(Boolean duplicateEmailsAllowed) {
+        this.duplicateEmailsAllowed = duplicateEmailsAllowed;
     }
 
     public Boolean isResetPasswordAllowed() {
@@ -513,6 +612,14 @@ public class RealmRepresentation {
 
     public void setBruteForceProtected(Boolean bruteForceProtected) {
         this.bruteForceProtected = bruteForceProtected;
+    }
+
+    public Boolean isPermanentLockout() {
+        return permanentLockout;
+    }
+
+    public void setPermanentLockout(Boolean permanentLockout) {
+        this.permanentLockout = permanentLockout;
     }
 
     public Integer getMaxFailureWaitSeconds() {
@@ -774,6 +881,14 @@ public class RealmRepresentation {
         this.otpPolicyPeriod = otpPolicyPeriod;
     }
 
+    public List<String> getOtpSupportedApplications() {
+        return otpSupportedApplications;
+    }
+
+    public void setOtpSupportedApplications(List<String> otpSupportedApplications) {
+        this.otpSupportedApplications = otpSupportedApplications;
+    }
+
     public String getBrowserFlow() {
         return browserFlow;
     }
@@ -814,6 +929,23 @@ public class RealmRepresentation {
         this.clientAuthenticationFlow = clientAuthenticationFlow;
     }
 
+    public String getDockerAuthenticationFlow() {
+        return dockerAuthenticationFlow;
+    }
+
+    public RealmRepresentation setDockerAuthenticationFlow(final String dockerAuthenticationFlow) {
+        this.dockerAuthenticationFlow = dockerAuthenticationFlow;
+        return this;
+    }
+
+    public String getKeycloakVersion() {
+        return keycloakVersion;
+    }
+
+    public void setKeycloakVersion(String keycloakVersion) {
+        this.keycloakVersion = keycloakVersion;
+    }
+
     public List<GroupRepresentation> getGroups() {
         return groups;
     }
@@ -822,12 +954,41 @@ public class RealmRepresentation {
         this.groups = groups;
     }
 
+    @Deprecated // use getClientScopes() instead
     public List<ClientTemplateRepresentation> getClientTemplates() {
         return clientTemplates;
     }
 
-    public void setClientTemplates(List<ClientTemplateRepresentation> clientTemplates) {
-        this.clientTemplates = clientTemplates;
+    public List<ClientScopeRepresentation> getClientScopes() {
+        return clientScopes;
+    }
+
+    public void setClientScopes(List<ClientScopeRepresentation> clientScopes) {
+        this.clientScopes = clientScopes;
+    }
+
+    public List<String> getDefaultDefaultClientScopes() {
+        return defaultDefaultClientScopes;
+    }
+
+    public void setDefaultDefaultClientScopes(List<String> defaultDefaultClientScopes) {
+        this.defaultDefaultClientScopes = defaultDefaultClientScopes;
+    }
+
+    public List<String> getDefaultOptionalClientScopes() {
+        return defaultOptionalClientScopes;
+    }
+
+    public void setDefaultOptionalClientScopes(List<String> defaultOptionalClientScopes) {
+        this.defaultOptionalClientScopes = defaultOptionalClientScopes;
+    }
+
+    public MultivaluedHashMap<String, ComponentExportRepresentation> getComponents() {
+        return components;
+    }
+
+    public void setComponents(MultivaluedHashMap<String, ComponentExportRepresentation> components) {
+        this.components = components;
     }
 
     @JsonIgnore
@@ -835,4 +996,27 @@ public class RealmRepresentation {
         return identityProviders != null && !identityProviders.isEmpty();
     }
 
+    public void setAttributes(Map<String, String> attributes) {
+        this.attributes = attributes;
+    }
+
+    public Map<String, String> getAttributes() {
+        return attributes;
+    }
+
+    public List<UserRepresentation> getFederatedUsers() {
+        return federatedUsers;
+    }
+
+    public void setFederatedUsers(List<UserRepresentation> federatedUsers) {
+        this.federatedUsers = federatedUsers;
+    }
+
+    public void setUserManagedAccessAllowed(Boolean userManagedAccessAllowed) {
+        this.userManagedAccessAllowed = userManagedAccessAllowed;
+    }
+
+    public Boolean isUserManagedAccessAllowed() {
+        return userManagedAccessAllowed;
+    }
 }

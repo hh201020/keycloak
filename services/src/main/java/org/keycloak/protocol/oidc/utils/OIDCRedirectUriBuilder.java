@@ -17,15 +17,14 @@
 
 package org.keycloak.protocol.oidc.utils;
 
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Map;
+import org.keycloak.common.util.Encode;
+import org.keycloak.common.util.KeycloakUriBuilder;
 
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-
-import org.keycloak.common.util.Encode;
-import org.keycloak.common.util.KeycloakUriBuilder;
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -39,6 +38,7 @@ public abstract class OIDCRedirectUriBuilder {
     }
 
     public abstract OIDCRedirectUriBuilder addParam(String paramName, String paramValue);
+
     public abstract Response build();
 
 
@@ -87,11 +87,16 @@ public abstract class OIDCRedirectUriBuilder {
 
         protected FragmentRedirectUriBuilder(KeycloakUriBuilder uriBuilder) {
             super(uriBuilder);
+
+            String fragment = uriBuilder.getFragment();
+            if (fragment != null) {
+                this.fragment = new StringBuilder(fragment);
+            }
         }
 
         @Override
         public OIDCRedirectUriBuilder addParam(String paramName, String paramValue) {
-            String param = paramName + "=" + Encode.encodeQueryParam(paramValue);
+            String param = paramName + "=" + Encode.encodeQueryParamAsIs(paramValue);
             if (fragment == null) {
                 fragment = new StringBuilder(param);
             } else {
@@ -125,7 +130,7 @@ public abstract class OIDCRedirectUriBuilder {
 
         @Override
         public OIDCRedirectUriBuilder addParam(String paramName, String paramValue) {
-            params.put(paramName, Encode.encodeQueryParam(paramValue));
+            params.put(paramName, paramValue);
             return this;
         }
 

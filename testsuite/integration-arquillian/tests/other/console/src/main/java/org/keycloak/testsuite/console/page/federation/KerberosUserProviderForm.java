@@ -1,13 +1,13 @@
 package org.keycloak.testsuite.console.page.federation;
 
-import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
-
 import org.keycloak.testsuite.console.page.fragment.OnOffSwitch;
 import org.keycloak.testsuite.page.Form;
-import org.openqa.selenium.By;
+import org.keycloak.testsuite.util.UIUtils;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.Select;
+
+import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
 
 /**
  * @author pdrozd
@@ -42,24 +42,27 @@ public class KerberosUserProviderForm extends Form {
     private OnOffSwitch updateProfileFirstLogin;
 
     public void setConsoleDisplayNameInput(String name) {
-        setInputValue(consoleDisplayNameInput, name);
+        UIUtils.setTextInputValue(consoleDisplayNameInput, name);
+    }
+
+    public String getConsoleDisplayNameInput() {
+        return UIUtils.getTextInputValue(consoleDisplayNameInput);
     }
 
     public void setPriorityInput(Integer priority) {
-        setInputValue(priorityInput, String.valueOf(priority));
+        UIUtils.setTextInputValue(priorityInput, String.valueOf(priority));
     }
 
     public void setKerberosRealmInput(String kerberosRealm) {
-        waitUntilElement(By.id("kerberosRealm")).is().present();
-        setInputValue(kerberosRealmInput, kerberosRealm);
+        UIUtils.setTextInputValue(kerberosRealmInput, kerberosRealm);
     }
 
     public void setServerPrincipalInput(String serverPrincipal) {
-        setInputValue(serverPrincipalInput, serverPrincipal);
+        UIUtils.setTextInputValue(serverPrincipalInput, serverPrincipal);
     }
 
     public void setKeyTabInput(String keyTab) {
-        setInputValue(keyTabInput, keyTab);
+        UIUtils.setTextInputValue(keyTabInput, keyTab);
     }
 
     public void setDebugEnabled(boolean debugEnabled) {
@@ -71,7 +74,6 @@ public class KerberosUserProviderForm extends Form {
     }
 
     public void selectEditMode(String mode) {
-        waitUntilElement(By.id("editMode")).is().present();
         editModeSelect.selectByVisibleText(mode);
     }
 

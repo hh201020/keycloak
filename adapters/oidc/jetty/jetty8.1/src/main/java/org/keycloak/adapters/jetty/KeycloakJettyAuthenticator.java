@@ -25,6 +25,7 @@ import org.keycloak.adapters.AdapterTokenStore;
 import org.keycloak.adapters.KeycloakDeployment;
 import org.keycloak.adapters.jetty.core.AbstractKeycloakJettyAuthenticator;
 import org.keycloak.adapters.jetty.core.JettySessionTokenStore;
+import org.keycloak.adapters.jetty.spi.JettyUserSessionManagement;
 
 import javax.servlet.ServletRequest;
 
@@ -45,12 +46,17 @@ public class KeycloakJettyAuthenticator extends AbstractKeycloakJettyAuthenticat
     }
 
     @Override
+    public JettyUserSessionManagement createSessionManagement(Request request) {
+        return new JettyUserSessionManagement(new Jetty81SessionManager(request.getSessionManager()));
+    }
+
+    @Override
     protected Request resolveRequest(ServletRequest req) {
         return (req instanceof Request)?(Request)req: AbstractHttpConnection.getCurrentConnection().getRequest();
     }
 
     @Override
-    protected Authentication createAuthentication(UserIdentity userIdentity) {
+    protected Authentication createAuthentication(UserIdentity userIdentity, Request request) {
         return new KeycloakAuthentication(getAuthMethod(), userIdentity) {
             @Override
             public void logout() {

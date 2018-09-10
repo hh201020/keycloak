@@ -20,7 +20,6 @@ package org.keycloak.models.cache.infinispan.entities;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
 
-import java.io.Serializable;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -33,7 +32,6 @@ public class CachedRole extends AbstractRevisioned implements InRealm {
     final protected String name;
     final protected String realm;
     final protected String description;
-    final protected Boolean scopeParamRequired;
     final protected boolean composite;
     final protected Set<String> composites = new HashSet<String>();
 
@@ -42,7 +40,6 @@ public class CachedRole extends AbstractRevisioned implements InRealm {
         composite = model.isComposite();
         description = model.getDescription();
         name = model.getName();
-        scopeParamRequired = model.isScopeParamRequired();
         this.realm = realm.getId();
         if (composite) {
             for (RoleModel child : model.getComposites()) {
@@ -62,10 +59,6 @@ public class CachedRole extends AbstractRevisioned implements InRealm {
 
     public String getDescription() {
         return description;
-    }
-
-    public Boolean isScopeParamRequired() {
-        return scopeParamRequired;
     }
 
     public boolean isComposite() {

@@ -21,13 +21,11 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleContainerModel;
 import org.keycloak.models.RoleModel;
-import org.keycloak.models.jpa.entities.RealmEntity;
 import org.keycloak.models.jpa.entities.RoleEntity;
 import org.keycloak.models.utils.KeycloakModelUtils;
 
 import javax.persistence.EntityManager;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Set;
 
 /**
@@ -71,16 +69,6 @@ public class RoleAdapter implements RoleModel, JpaModel<RoleEntity> {
     }
 
     @Override
-    public boolean isScopeParamRequired() {
-        return role.isScopeParamRequired();
-    }
-
-    @Override
-    public void setScopeParamRequired(boolean scopeParamRequired) {
-        role.setScopeParamRequired(scopeParamRequired);
-    }
-
-    @Override
     public String getId() {
         return role.getId();
     }
@@ -102,16 +90,12 @@ public class RoleAdapter implements RoleModel, JpaModel<RoleEntity> {
             if (composite.equals(entity)) return;
         }
         getEntity().getCompositeRoles().add(entity);
-        em.flush();
     }
 
     @Override
     public void removeCompositeRole(RoleModel role) {
         RoleEntity entity = RoleAdapter.toRoleEntity(role, em);
-        Iterator<RoleEntity> it = getEntity().getCompositeRoles().iterator();
-        while (it.hasNext()) {
-            if (it.next().equals(entity)) it.remove();
-        }
+        getEntity().getCompositeRoles().remove(entity);
     }
 
     @Override
@@ -129,12 +113,20 @@ public class RoleAdapter implements RoleModel, JpaModel<RoleEntity> {
 
     @Override
     public boolean hasRole(RoleModel role) {
-        if (this.equals(role)) return true;
-        if (!isComposite()) return false;
-
-        Set<RoleModel> visited = new HashSet<RoleModel>();
-        return KeycloakModelUtils.searchFor(role, this, visited);
+        return this.equals(role) || KeycloakModelUtils.searchFor(role, this, new HashSet<>());
     }
+
+    @Override
+    public boolean isClientRole() {
+        return role.isClientRole();
+    }
+
+    @Override
+    public String getContainerId() {
+        if (isClientRole()) return role.getClient().getId();
+        else return realm.getId();
+    }
+
 
     @Override
     public RoleContainerModel getContainer() {

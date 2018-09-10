@@ -17,38 +17,73 @@
 
 package org.keycloak.models.cache.infinispan;
 
-import org.keycloak.models.*;
-import org.keycloak.models.cache.CacheUserProvider;
+import org.keycloak.models.ClientModel;
+import org.keycloak.models.GroupModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleContainerModel;
+import org.keycloak.models.RoleModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.models.cache.CachedUserModel;
 import org.keycloak.models.cache.infinispan.entities.CachedUser;
 import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.models.utils.RoleUtils;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
-public class UserAdapter implements UserModel {
-    protected UserModel updated;
+public class UserAdapter implements CachedUserModel {
+    protected volatile UserModel updated;
     protected CachedUser cached;
-    protected CacheUserProvider userProviderCache;
+    protected UserCacheSession userProviderCache;
     protected KeycloakSession keycloakSession;
     protected RealmModel realm;
 
-    public UserAdapter(CachedUser cached, CacheUserProvider userProvider, KeycloakSession keycloakSession, RealmModel realm) {
+    public UserAdapter(CachedUser cached, UserCacheSession userProvider, KeycloakSession keycloakSession, RealmModel realm) {
         this.cached = cached;
         this.userProviderCache = userProvider;
         this.keycloakSession = keycloakSession;
         this.realm = realm;
     }
 
-    protected void getDelegateForUpdate() {
+    @Override
+    public UserModel getDelegateForUpdate() {
         if (updated == null) {
-            userProviderCache.registerUserInvalidation(realm, getId());
+            userProviderCache.registerUserInvalidation(realm, cached);
             updated = userProviderCache.getDelegate().getUserById(getId(), realm);
             if (updated == null) throw new IllegalStateException("Not found in database");
         }
+        return updated;
     }
+
+    @Override
+    public boolean isMarkedForEviction() {
+        return updated != null;
+    }
+
+    @Override
+    public void invalidate() {
+        getDelegateForUpdate();
+    }
+
+    @Override
+    public long getCacheTimestamp() {
+        return cached.getCacheTimestamp();
+    }
+
+    @Override
+    public ConcurrentHashMap getCachedWith() {
+        return cached.getCachedWith();
+    }
+
     @Override
     public String getId() {
         if (updated != null) return updated.getId();
@@ -83,12 +118,6 @@ public class UserAdapter implements UserModel {
     public boolean isEnabled() {
         if (updated != null) return updated.isEnabled();
         return cached.isEnabled();
-    }
-
-    @Override
-    public boolean isOtpEnabled() {
-        if (updated != null) return updated.isOtpEnabled();
-        return cached.isTotp();
     }
 
     @Override
@@ -214,30 +243,6 @@ public class UserAdapter implements UserModel {
     }
 
     @Override
-    public void setOtpEnabled(boolean totp) {
-        getDelegateForUpdate();
-        updated.setOtpEnabled(totp);
-    }
-
-    @Override
-    public void updateCredential(UserCredentialModel cred) {
-        getDelegateForUpdate();
-        updated.updateCredential(cred);
-    }
-
-    @Override
-    public List<UserCredentialValueModel> getCredentialsDirectly() {
-        if (updated != null) return updated.getCredentialsDirectly();
-        return cached.getCredentials();
-    }
-
-    @Override
-    public void updateCredentialDirectly(UserCredentialValueModel cred) {
-        getDelegateForUpdate();
-        updated.updateCredentialDirectly(cred);
-    }
-
-    @Override
     public String getFederationLink() {
         if (updated != null) return updated.getFederationLink();
         return cached.getFederationLink();
@@ -302,7 +307,7 @@ public class UserAdapter implements UserModel {
         for (RoleModel mapping: mappings) {
            if (mapping.hasRole(role)) return true;
         }
-        return false;
+        return RoleUtils.hasRoleFromGroup(getGroups(), role, true);
     }
 
     @Override
@@ -369,39 +374,7 @@ public class UserAdapter implements UserModel {
         if (updated != null) return updated.isMemberOf(group);
         if (cached.getGroups().contains(group.getId())) return true;
         Set<GroupModel> roles = getGroups();
-        return KeycloakModelUtils.isMember(roles, group);
-    }
-
-    @Override
-    public void addConsent(UserConsentModel consent) {
-        getDelegateForUpdate();
-        updated.addConsent(consent);
-    }
-
-    @Override
-    public UserConsentModel getConsentByClient(String clientId) {
-        // TODO: caching?
-        getDelegateForUpdate();
-        return updated.getConsentByClient(clientId);
-    }
-
-    @Override
-    public List<UserConsentModel> getConsents() {
-        // TODO: caching?
-        getDelegateForUpdate();
-        return updated.getConsents();
-    }
-
-    @Override
-    public void updateConsent(UserConsentModel consent) {
-        getDelegateForUpdate();
-        updated.updateConsent(consent);
-    }
-
-    @Override
-    public boolean revokeConsentForClient(String clientId) {
-        getDelegateForUpdate();
-        return updated.revokeConsentForClient(clientId);
+        return RoleUtils.isMember(roles, group);
     }
 
     @Override

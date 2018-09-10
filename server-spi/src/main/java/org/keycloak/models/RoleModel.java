@@ -34,10 +34,6 @@ public interface RoleModel {
 
     void setName(String name);
 
-    boolean isScopeParamRequired();
-
-    void setScopeParamRequired(boolean scopeParamRequired);
-
     boolean isComposite();
 
     void addCompositeRole(RoleModel role);
@@ -45,6 +41,10 @@ public interface RoleModel {
     void removeCompositeRole(RoleModel role);
 
     Set<RoleModel> getComposites();
+
+    boolean isClientRole();
+
+    String getContainerId();
 
     RoleContainerModel getContainer();
 

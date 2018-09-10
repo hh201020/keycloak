@@ -17,9 +17,11 @@
 
 package org.keycloak.adapters;
 
+import org.apache.http.HttpHost;
 import org.apache.http.client.CookieStore;
 import org.apache.http.client.HttpClient;
 import org.apache.http.conn.ClientConnectionManager;
+import org.apache.http.conn.params.ConnRoutePNames;
 import org.apache.http.conn.scheme.PlainSocketFactory;
 import org.apache.http.conn.scheme.Scheme;
 import org.apache.http.conn.scheme.SchemeRegistry;
@@ -34,9 +36,9 @@ import org.apache.http.impl.conn.SingleClientConnManager;
 import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
 import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.HttpConnectionParams;
-import org.keycloak.representations.adapters.config.AdapterConfig;
 import org.keycloak.common.util.EnvUtil;
 import org.keycloak.common.util.KeystoreUtil;
+import org.keycloak.representations.adapters.config.AdapterHttpClientConfig;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
@@ -46,6 +48,7 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
+import java.net.URI;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
@@ -54,6 +57,8 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import org.apache.http.client.params.ClientPNames;
+import org.apache.http.client.params.CookiePolicy;
 
 /**
  * Abstraction for creating HttpClients. Allows SSL configuration.
@@ -112,6 +117,7 @@ public class HttpClientBuilder {
     protected TimeUnit socketTimeoutUnits = TimeUnit.MILLISECONDS;
     protected long establishConnectionTimeout = -1;
     protected TimeUnit establishConnectionTimeoutUnits = TimeUnit.MILLISECONDS;
+    protected HttpHost proxyHost;
 
 
     /**
@@ -121,8 +127,7 @@ public class HttpClientBuilder {
      * @param unit
      * @return
      */
-    public HttpClientBuilder socketTimeout(long timeout, TimeUnit unit)
-    {
+    public HttpClientBuilder socketTimeout(long timeout, TimeUnit unit) {
         this.socketTimeout = timeout;
         this.socketTimeoutUnits = unit;
         return this;
@@ -135,8 +140,7 @@ public class HttpClientBuilder {
      * @param unit
      * @return
      */
-    public HttpClientBuilder establishConnectionTimeout(long timeout, TimeUnit unit)
-    {
+    public HttpClientBuilder establishConnectionTimeout(long timeout, TimeUnit unit) {
         this.establishConnectionTimeout = timeout;
         this.establishConnectionTimeoutUnits = unit;
         return this;
@@ -168,8 +172,8 @@ public class HttpClientBuilder {
         return this;
     }
 
-    public HttpClientBuilder disableCookieCache() {
-        this.disableCookieCache = true;
+    public HttpClientBuilder disableCookieCache(boolean disable) {
+        this.disableCookieCache = disable;
         return this;
     }
 
@@ -287,16 +291,21 @@ public class HttpClientBuilder {
                 cm = new SingleClientConnManager(registry);
             }
             BasicHttpParams params = new BasicHttpParams();
-            if (socketTimeout > -1)
-            {
+            params.setParameter(ClientPNames.COOKIE_POLICY, CookiePolicy.BROWSER_COMPATIBILITY);
+
+            if (proxyHost != null) {
+                params.setParameter(ConnRoutePNames.DEFAULT_PROXY, proxyHost);
+            }
+
+            if (socketTimeout > -1) {
                 HttpConnectionParams.setSoTimeout(params, (int) socketTimeoutUnits.toMillis(socketTimeout));
 
             }
-            if (establishConnectionTimeout > -1)
-            {
-                HttpConnectionParams.setConnectionTimeout(params, (int)establishConnectionTimeoutUnits.toMillis(establishConnectionTimeout));
+            if (establishConnectionTimeout > -1) {
+                HttpConnectionParams.setConnectionTimeout(params, (int) establishConnectionTimeoutUnits.toMillis(establishConnectionTimeout));
             }
             DefaultHttpClient client = new DefaultHttpClient(cm, params);
+
             if (disableCookieCache) {
                 client.setCookieStore(new CookieStore() {
                     @Override
@@ -327,8 +336,8 @@ public class HttpClientBuilder {
         }
     }
 
-    public HttpClient build(AdapterConfig adapterConfig) {
-        disableCookieCache(); // disable cookie cache as we don't want sticky sessions for load balancing
+    public HttpClient build(AdapterHttpClientConfig adapterConfig) {
+        disableCookieCache(true); // disable cookie cache as we don't want sticky sessions for load balancing
 
         String truststorePath = adapterConfig.getTruststore();
         if (truststorePath != null) {
@@ -364,6 +373,28 @@ public class HttpClientBuilder {
         } else {
             trustStore(truststore);
         }
+
+        configureProxyForAuthServerIfProvided(adapterConfig);
+
         return build();
+    }
+
+    /**
+     * Configures a the proxy to use for auth-server requests if provided.
+     * <p>
+     * If the given {@link AdapterHttpClientConfig} contains the attribute {@code proxy-url} we use the
+     * given URL as a proxy server, otherwise the proxy configuration is ignored.
+     * </p>
+     *
+     * @param adapterConfig
+     */
+    private void configureProxyForAuthServerIfProvided(AdapterHttpClientConfig adapterConfig) {
+
+        if (adapterConfig == null || adapterConfig.getProxyUrl() == null || adapterConfig.getProxyUrl().trim().isEmpty()) {
+            return;
+        }
+
+        URI uri = URI.create(adapterConfig.getProxyUrl());
+        this.proxyHost = new HttpHost(uri.getHost(), uri.getPort(), uri.getScheme());
     }
 }

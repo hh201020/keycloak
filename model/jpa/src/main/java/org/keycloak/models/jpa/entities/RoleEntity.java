@@ -17,8 +17,7 @@
 
 package org.keycloak.models.jpa.entities;
 
-import org.hibernate.annotations.DynamicInsert;
-import org.hibernate.annotations.DynamicUpdate;
+import org.hibernate.annotations.Nationalized;
 
 import javax.persistence.Access;
 import javax.persistence.AccessType;
@@ -34,8 +33,8 @@ import javax.persistence.NamedQueries;
 import javax.persistence.NamedQuery;
 import javax.persistence.Table;
 import javax.persistence.UniqueConstraint;
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -64,12 +63,12 @@ public class RoleEntity {
     @Access(AccessType.PROPERTY) // we do this because relationships often fetch id, but not entity.  This avoids an extra SQL
     private String id;
 
+    @Nationalized
     @Column(name = "NAME")
     private String name;
+    @Nationalized
     @Column(name = "DESCRIPTION")
     private String description;
-    @Column(name = "SCOPE_PARAM_REQUIRED")
-    private boolean scopeParamRequired;
 
     // hax! couldn't get constraint to work properly
     @Column(name = "REALM_ID")
@@ -92,7 +91,7 @@ public class RoleEntity {
 
     @ManyToMany(fetch = FetchType.LAZY, cascade = {})
     @JoinTable(name = "COMPOSITE_ROLE", joinColumns = @JoinColumn(name = "COMPOSITE"), inverseJoinColumns = @JoinColumn(name = "CHILD_ROLE"))
-    private Collection<RoleEntity> compositeRoles = new ArrayList<RoleEntity>();
+    private Set<RoleEntity> compositeRoles = new HashSet<>();
 
     public String getId() {
         return id;
@@ -128,19 +127,11 @@ public class RoleEntity {
         this.description = description;
     }
 
-    public boolean isScopeParamRequired() {
-        return scopeParamRequired;
-    }
-
-    public void setScopeParamRequired(boolean scopeParamRequired) {
-        this.scopeParamRequired = scopeParamRequired;
-    }
-
-    public Collection<RoleEntity> getCompositeRoles() {
+    public Set<RoleEntity> getCompositeRoles() {
         return compositeRoles;
     }
 
-    public void setCompositeRoles(Collection<RoleEntity> compositeRoles) {
+    public void setCompositeRoles(Set<RoleEntity> compositeRoles) {
         this.compositeRoles = compositeRoles;
     }
 

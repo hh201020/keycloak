@@ -3,6 +3,9 @@
 <html>
 <head>
     <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="robots" content="noindex, nofollow">
+
     <title>${msg("accountManagementTitle")}</title>
     <link rel="icon" href="${url.resourcesPath}/img/favicon.ico">
     <#if properties.styles?has_content>
@@ -17,7 +20,7 @@
     </#if>
 </head>
 <body class="admin-console user ${bodyClass}">
-
+        
     <header class="navbar navbar-default navbar-pf navbar-main header">
         <nav class="navbar" role="navigation">
             <div class="navbar-header">
@@ -49,7 +52,7 @@
     </header>
 
     <div class="container">
-        <div class="bs-sidebar col-sm-3  ng-scope">
+        <div class="bs-sidebar col-sm-3">
             <ul>
                 <li class="<#if active=='account'>active</#if>"><a href="${url.accountUrl}">${msg("account")}</a></li>
                 <#if features.passwordUpdateSupported><li class="<#if active=='password'>active</#if>"><a href="${url.passwordUrl}">${msg("password")}</a></li></#if>
@@ -58,15 +61,16 @@
                 <li class="<#if active=='sessions'>active</#if>"><a href="${url.sessionsUrl}">${msg("sessions")}</a></li>
                 <li class="<#if active=='applications'>active</#if>"><a href="${url.applicationsUrl}">${msg("applications")}</a></li>
                 <#if features.log><li class="<#if active=='log'>active</#if>"><a href="${url.logUrl}">${msg("log")}</a></li></#if>
+                <#if realm.userManagedAccessAllowed && features.authorization><li class="<#if active=='authorization'>active</#if>"><a href="${url.resourceUrl}">${msg("myResources")}</a></li></#if>
             </ul>
         </div>
 
-        <div class="col-md-9 content-area">
+        <div class="col-sm-9 content-area">
             <#if message?has_content>
                 <div class="alert alert-${message.type}">
                     <#if message.type=='success' ><span class="pficon pficon-ok"></span></#if>
                     <#if message.type=='error' ><span class="pficon pficon-error-octagon"></span><span class="pficon pficon-error-exclamation"></span></#if>
-                    ${message.summary}
+                    ${kcSanitize(message.summary)?no_esc}
                 </div>
             </#if>
 

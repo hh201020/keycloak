@@ -16,12 +16,11 @@
  */
 package org.keycloak.testsuite.arquillian.containers;
 
-import java.util.Collection;
-import java.util.Map;
-
 import org.jboss.arquillian.config.descriptor.api.ArquillianDescriptor;
 import org.jboss.arquillian.config.descriptor.api.ContainerDef;
 import org.jboss.arquillian.config.descriptor.api.GroupDef;
+import org.jboss.arquillian.config.descriptor.impl.ContainerDefImpl;
+import org.jboss.arquillian.config.descriptor.impl.GroupDefImpl;
 import org.jboss.arquillian.container.spi.ContainerRegistry;
 import org.jboss.arquillian.container.spi.client.container.DeployableContainer;
 import org.jboss.arquillian.core.api.Injector;
@@ -33,6 +32,14 @@ import org.jboss.arquillian.core.api.annotation.Observes;
 import org.jboss.arquillian.core.spi.ServiceLoader;
 import org.jboss.arquillian.core.spi.Validate;
 import org.jboss.logging.Logger;
+import org.jboss.shrinkwrap.descriptor.spi.node.Node;
+import org.jboss.shrinkwrap.descriptor.spi.node.NodeDescriptor;
+import org.keycloak.testsuite.arquillian.container.AppServerContainerService;
+import org.mvel2.MVEL;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+
 import static org.keycloak.testsuite.arquillian.containers.SecurityActions.isClassPresent;
 import static org.keycloak.testsuite.arquillian.containers.SecurityActions.loadClass;
 
@@ -47,6 +54,8 @@ import static org.keycloak.testsuite.arquillian.containers.SecurityActions.loadC
 public class RegistryCreator {
 
     protected final Logger log = Logger.getLogger(this.getClass());
+    public static final String ADAPTER_IMPL_CONFIG_STRING = "adapterImplClass";
+    private static final String ENABLED = "enabled";
 
     @Inject
     @ApplicationScoped
@@ -57,13 +66,12 @@ public class RegistryCreator {
 
     @Inject
     private Instance<ServiceLoader> loader;
-    
-    private String authContainer;
-    private String migrationContainer;
-    
+
     public void createRegistry(@Observes ArquillianDescriptor event) {
         ContainerRegistry reg = new Registry(injector.get());
         ServiceLoader serviceLoader = loader.get();
+
+        log.info("arquillian.xml: " + System.getProperty("arquillian.xml"));
 
         @SuppressWarnings("rawtypes")
         Collection<DeployableContainer> containers = serviceLoader.all(DeployableContainer.class);
@@ -72,70 +80,71 @@ public class RegistryCreator {
             throw new IllegalStateException("There are not any container adapters on the classpath");
         }
 
-        for (ContainerDef container : event.getContainers()) {
-            if (isCreatingContainer(container, containers)) {
+        List<ContainerDef> containersDefs = event.getContainers();//arquillian.xml
+        List<GroupDef> groupDefs = event.getGroups();//arquillian.xml
+
+        addAppServerContainers(containersDefs, groupDefs);//dynamically loaded containers/groups
+
+        createRegistry(containersDefs, reg, serviceLoader);
+
+        for (GroupDef group : groupDefs) {
+            createRegistry(group.getGroupContainers(), reg, serviceLoader);
+        }
+
+        registry.set(reg);
+    }
+
+    private void createRegistry(List<ContainerDef> containerDefs, ContainerRegistry reg, ServiceLoader serviceLoader) {
+        for (ContainerDef container : containerDefs) {
+            if (isAdapterImplClassAvailable(container)) {
                 if (isEnabled(container)) {
-                    checkMultipleEnabledContainers(container);
+                    log.info("Registering container: " + container.getContainerName());
                     reg.create(container, serviceLoader);
                 } else {
                     log.info("Container is disabled: " + container.getContainerName());
                 }
             }
         }
+    }
 
-        for (GroupDef group : event.getGroups()) {
-            for (ContainerDef container : group.getGroupContainers()) {
-                if (isCreatingContainer(container, containers)) {
-                    if (isEnabled(container)) {
-                        //TODO add checkMultipleEnabledContainers according to groups
-                        reg.create(container, serviceLoader);
-                    } else {
-                        log.info("Container is disabled: " + container.getContainerName());
-                    }
-                }
+    private void addAppServerContainers(List<ContainerDef> containerDefs, List<GroupDef> groupDefs) {
+        Node parent = ((NodeDescriptor)containerDefs.get(0)).getRootNode();
+
+        String appServerName = System.getProperty("app.server", "undertow");
+
+        List<Node> containers = AppServerContainerService.getInstance().getContainers(appServerName);
+        if (containers == null) {
+            log.warn("None dynamically loaded containers");
+            return;
+        }
+        for (Node container : containers) {
+            if (container.getName().equals("container")) {
+                containerDefs.add(new ContainerDefImpl("arquillian.xml", parent, container));
+            } else if (container.getName().equals("group")) {
+                groupDefs.add(new GroupDefImpl("arquillian.xml", parent, container));
             }
         }
-
-        registry.set(reg);
     }
 
-    private static final String ENABLED = "enabled";
-
-    private boolean isEnabled(ContainerDef containerDef) {
+    private static boolean isEnabled(ContainerDef containerDef) {
         Map<String, String> props = containerDef.getContainerProperties();
-        return !props.containsKey(ENABLED)
-                || (props.containsKey(ENABLED) && props.get(ENABLED).equals("true"));
-    }
-    
-    private void checkMultipleEnabledContainers(ContainerDef containerDef) {
-        String containerName = containerDef.getContainerName();
-        
-        if (containerName.startsWith("keycloak")) {
-            if (migrationContainer == null) {
-                migrationContainer = containerName;
-            } else {
-                throw new RuntimeException("There is more than one migration container "
-                        + "enabled in arquillian.xml. It has to be enabled at most one. "
-                        + "Do not activate more than one migration profile.");
-            }
-        } else if (containerName.startsWith("auth-server")) {
-            if (authContainer == null) {
-                authContainer = containerName;
-            } else {
-                throw new RuntimeException("There is more than one auth containec enabled "
-                        + "in arquillian.xml. It has to be enabled exactly one. Do not "
-                        + "activate more than one auth profile.");
-            }
+        try {
+            return !props.containsKey(ENABLED)
+                    || (props.containsKey(ENABLED) && ! props.get(ENABLED).isEmpty() && MVEL.evalToBoolean(props.get(ENABLED), (Object) null));
+        } catch (Exception ex) {
+            return false;
         }
     }
 
     @SuppressWarnings("rawtypes")
-    private boolean isCreatingContainer(ContainerDef containerDef, Collection<DeployableContainer> containers) {
+    private boolean isAdapterImplClassAvailable(ContainerDef containerDef) {
 
         if (hasAdapterImplClassProperty(containerDef)) {
             if (isClassPresent(getAdapterImplClassValue(containerDef))) {
                 return DeployableContainer.class.isAssignableFrom(
                         loadClass(getAdapterImplClassValue(containerDef)));
+            } else {
+                log.warn("Cannot load adapterImpl class for " + containerDef.getContainerName());
             }
         }
 
@@ -154,14 +163,13 @@ public class RegistryCreator {
     public static String getAdapterImplClassValue(ContainerDef containerDef) {
         return containerDef.getContainerProperties().get(ADAPTER_IMPL_CONFIG_STRING).trim();
     }
-    public static final String ADAPTER_IMPL_CONFIG_STRING = "adapterImplClass";
-
+    
     @SuppressWarnings("rawtypes")
     public static DeployableContainer<?> getContainerAdapter(String adapterImplClass, Collection<DeployableContainer> containers) {
         Validate.notNullOrEmpty(adapterImplClass, "The value of " + ADAPTER_IMPL_CONFIG_STRING + " can not be a null object "
                 + "nor an empty string!");
 
-        Class<?> foundAdapter = null;
+        Class<?> foundAdapter;
 
         if (isClassPresent(adapterImplClass)) {
             foundAdapter = loadClass(adapterImplClass);

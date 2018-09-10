@@ -40,12 +40,13 @@ public class RefreshToken extends AccessToken {
      */
     public RefreshToken(AccessToken token) {
         this();
-        this.clientSession = token.getClientSession();
         this.issuer = token.issuer;
         this.subject = token.subject;
         this.issuedFor = token.issuedFor;
         this.sessionState = token.sessionState;
         this.nonce = token.nonce;
+        this.audience = token.audience;
+        this.scope = token.scope;
         if (token.realmAccess != null) {
             realmAccess = token.realmAccess.clone();
         }
@@ -56,4 +57,5 @@ public class RefreshToken extends AccessToken {
             }
         }
     }
+
 }

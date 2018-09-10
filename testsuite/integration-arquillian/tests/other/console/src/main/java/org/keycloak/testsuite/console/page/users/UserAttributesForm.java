@@ -1,13 +1,16 @@
 package org.keycloak.testsuite.console.page.users;
 
-import java.util.List;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.console.page.fragment.OnOffSwitch;
 import org.keycloak.testsuite.page.Form;
-import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
+import org.keycloak.testsuite.util.UIUtils;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.ui.Select;
+
+import java.util.List;
+
+import static org.keycloak.testsuite.util.WaitUtils.waitUntilElement;
 
 /**
  *
@@ -53,39 +56,39 @@ public class UserAttributesForm extends Form {
     private WebElement unlockUserButton;
 
     public String getId() {
-        return getInputValue(idInput);
+        return UIUtils.getTextInputValue(idInput);
     }
 
     public String getUsername() {
-        return getInputValue(usernameInput);
+        return UIUtils.getTextInputValue(usernameInput);
     }
 
     public void setUsername(String username) {
-        setInputValue(usernameInput, username);
+        UIUtils.setTextInputValue(usernameInput, username);
     }
 
     public String getEmail() {
-        return getInputValue(emailInput);
+        return UIUtils.getTextInputValue(emailInput);
     }
 
     public void setEmail(String email) {
-        setInputValue(emailInput, email);
+        UIUtils.setTextInputValue(emailInput, email);
     }
 
     public String getFirstName() {
-        return getInputValue(firstNameInput);
+        return UIUtils.getTextInputValue(firstNameInput);
     }
 
     public void setFirstName(String firstName) {
-        setInputValue(firstNameInput, firstName);
+        UIUtils.setTextInputValue(firstNameInput, firstName);
     }
 
     public String getLastName() {
-        return getInputValue(lastNameInput);
+        return UIUtils.getTextInputValue(lastNameInput);
     }
 
     public void setLastName(String lastname) {
-        setInputValue(lastNameInput, lastname);
+        UIUtils.setTextInputValue(lastNameInput, lastname);
     }
 
     public boolean isEnabled() {

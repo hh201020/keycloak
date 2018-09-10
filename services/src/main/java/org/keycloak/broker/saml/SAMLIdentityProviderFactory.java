@@ -16,6 +16,7 @@
  */
 package org.keycloak.broker.saml;
 
+import org.keycloak.Config.Scope;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
 import org.keycloak.dom.saml.v2.metadata.EndpointType;
 import org.keycloak.dom.saml.v2.metadata.EntitiesDescriptorType;
@@ -24,10 +25,12 @@ import org.keycloak.dom.saml.v2.metadata.IDPSSODescriptorType;
 import org.keycloak.dom.saml.v2.metadata.KeyDescriptorType;
 import org.keycloak.dom.saml.v2.metadata.KeyTypes;
 import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 import org.keycloak.saml.common.exceptions.ParsingException;
 import org.keycloak.saml.common.util.DocumentUtil;
 import org.keycloak.saml.processing.core.parsers.saml.SAMLParser;
+import org.keycloak.saml.validators.DestinationValidator;
 import org.w3c.dom.Element;
 
 import javax.xml.namespace.QName;
@@ -43,20 +46,22 @@ public class SAMLIdentityProviderFactory extends AbstractIdentityProviderFactory
 
     public static final String PROVIDER_ID = "saml";
 
+    private DestinationValidator destinationValidator;
+
     @Override
     public String getName() {
         return "SAML v2.0";
     }
 
     @Override
-    public SAMLIdentityProvider create(IdentityProviderModel model) {
-        return new SAMLIdentityProvider(new SAMLIdentityProviderConfig(model));
+    public SAMLIdentityProvider create(KeycloakSession session, IdentityProviderModel model) {
+        return new SAMLIdentityProvider(session, new SAMLIdentityProviderConfig(model), destinationValidator);
     }
 
     @Override
-    public Map<String, String> parseConfig(InputStream inputStream) {
+    public Map<String, String> parseConfig(KeycloakSession session, InputStream inputStream) {
         try {
-            Object parsedObject = new SAMLParser().parse(inputStream);
+            Object parsedObject = SAMLParser.getInstance().parse(inputStream);
             EntityDescriptorType entityType;
 
             if (EntitiesDescriptorType.class.isInstance(parsedObject)) {
@@ -83,11 +88,12 @@ public class SAMLIdentityProviderFactory extends AbstractIdentityProviderFactory
                 if (idpDescriptor != null) {
                     SAMLIdentityProviderConfig samlIdentityProviderConfig = new SAMLIdentityProviderConfig();
                     String singleSignOnServiceUrl = null;
-                    boolean postBinding = false;
+                    boolean postBindingResponse = false;
+                    boolean postBindingLogout = false;
                     for (EndpointType endpoint : idpDescriptor.getSingleSignOnService()) {
                         if (endpoint.getBinding().toString().equals(JBossSAMLURIConstants.SAML_HTTP_POST_BINDING.get())) {
                             singleSignOnServiceUrl = endpoint.getLocation().toString();
-                            postBinding = true;
+                            postBindingResponse = true;
                             break;
                         } else if (endpoint.getBinding().toString().equals(JBossSAMLURIConstants.SAML_HTTP_REDIRECT_BINDING.get())){
                             singleSignOnServiceUrl = endpoint.getLocation().toString();
@@ -95,10 +101,11 @@ public class SAMLIdentityProviderFactory extends AbstractIdentityProviderFactory
                     }
                     String singleLogoutServiceUrl = null;
                     for (EndpointType endpoint : idpDescriptor.getSingleLogoutService()) {
-                        if (postBinding && endpoint.getBinding().toString().equals(JBossSAMLURIConstants.SAML_HTTP_POST_BINDING.get())) {
+                        if (postBindingResponse && endpoint.getBinding().toString().equals(JBossSAMLURIConstants.SAML_HTTP_POST_BINDING.get())) {
                             singleLogoutServiceUrl = endpoint.getLocation().toString();
+                            postBindingLogout = true;
                             break;
-                        } else if (!postBinding && endpoint.getBinding().toString().equals(JBossSAMLURIConstants.SAML_HTTP_REDIRECT_BINDING.get())){
+                        } else if (!postBindingResponse && endpoint.getBinding().toString().equals(JBossSAMLURIConstants.SAML_HTTP_REDIRECT_BINDING.get())){
                             singleLogoutServiceUrl = endpoint.getLocation().toString();
                             break;
                         }
@@ -107,9 +114,11 @@ public class SAMLIdentityProviderFactory extends AbstractIdentityProviderFactory
                     samlIdentityProviderConfig.setSingleLogoutServiceUrl(singleLogoutServiceUrl);
                     samlIdentityProviderConfig.setSingleSignOnServiceUrl(singleSignOnServiceUrl);
                     samlIdentityProviderConfig.setWantAuthnRequestsSigned(idpDescriptor.isWantAuthnRequestsSigned());
+                    samlIdentityProviderConfig.setAddExtensionsElementWithKeyInfo(false);
                     samlIdentityProviderConfig.setValidateSignature(idpDescriptor.isWantAuthnRequestsSigned());
-                    samlIdentityProviderConfig.setPostBindingResponse(postBinding);
-                    samlIdentityProviderConfig.setPostBindingAuthnRequest(postBinding);
+                    samlIdentityProviderConfig.setPostBindingResponse(postBindingResponse);
+                    samlIdentityProviderConfig.setPostBindingAuthnRequest(postBindingResponse);
+                    samlIdentityProviderConfig.setPostBindingLogout(postBindingLogout);
 
                     List<KeyDescriptorType> keyDescriptor = idpDescriptor.getKeyDescriptor();
                     String defaultCertificate = null;
@@ -120,7 +129,7 @@ public class SAMLIdentityProviderFactory extends AbstractIdentityProviderFactory
                             Element x509KeyInfo = DocumentUtil.getChildElement(keyInfo, new QName("dsig", "X509Certificate"));
 
                             if (KeyTypes.SIGNING.equals(keyDescriptorType.getUse())) {
-                                samlIdentityProviderConfig.setSigningCertificate(x509KeyInfo.getTextContent());
+                                samlIdentityProviderConfig.addSigningCertificate(x509KeyInfo.getTextContent());
                             } else if (KeyTypes.ENCRYPTION.equals(keyDescriptorType.getUse())) {
                                 samlIdentityProviderConfig.setEncryptionPublicKey(x509KeyInfo.getTextContent());
                             } else if (keyDescriptorType.getUse() ==  null) {
@@ -130,8 +139,8 @@ public class SAMLIdentityProviderFactory extends AbstractIdentityProviderFactory
                     }
 
                     if (defaultCertificate != null) {
-                        if (samlIdentityProviderConfig.getSigningCertificate() == null) {
-                            samlIdentityProviderConfig.setSigningCertificate(defaultCertificate);
+                        if (samlIdentityProviderConfig.getSigningCertificates().length == 0) {
+                            samlIdentityProviderConfig.addSigningCertificate(defaultCertificate);
                         }
 
                         if (samlIdentityProviderConfig.getEncryptionPublicKey() == null) {
@@ -154,4 +163,10 @@ public class SAMLIdentityProviderFactory extends AbstractIdentityProviderFactory
         return PROVIDER_ID;
     }
 
+    @Override
+    public void init(Scope config) {
+        super.init(config);
+
+        this.destinationValidator = DestinationValidator.forProtocolMap(config.getArray("knownProtocols"));
+    }
 }

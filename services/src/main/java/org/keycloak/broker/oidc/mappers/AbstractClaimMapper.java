@@ -17,14 +17,20 @@
 
 package org.keycloak.broker.oidc.mappers;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.keycloak.broker.oidc.KeycloakOIDCIdentityProvider;
+import org.keycloak.broker.oidc.OIDCIdentityProvider;
 import org.keycloak.broker.provider.AbstractIdentityProviderMapper;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;
+import org.keycloak.protocol.oidc.mappers.OIDCAttributeMapperHelper;
 import org.keycloak.representations.JsonWebToken;
 
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -35,13 +41,16 @@ public abstract class AbstractClaimMapper extends AbstractIdentityProviderMapper
     public static final String CLAIM_VALUE = "claim.value";
 
     public static Object getClaimValue(JsonWebToken token, String claim) {
-        String[] split = claim.split("\\.");
+        List<String> split = OIDCAttributeMapperHelper.splitClaimPath(claim);
         Map<String, Object> jsonObject = token.getOtherClaims();
-        for (int i = 0; i < split.length; i++) {
-            if (i == split.length - 1) {
-                return jsonObject.get(split[i]);
+        final int length = split.size();
+        int i = 0;
+        for (String component : split) {
+            i++;
+            if (i == length) {
+                return jsonObject.get(component);
             } else {
-                Object val = jsonObject.get(split[i]);
+                Object val = jsonObject.get(component);
                 if (!(val instanceof Map)) return null;
                 jsonObject = (Map<String, Object>)val;
             }
@@ -70,6 +79,12 @@ public abstract class AbstractClaimMapper extends AbstractIdentityProviderMapper
                 if (value != null) return value;
             }
 
+        }
+        {
+            // Search the OIDC UserInfo claim set (if any)
+            JsonNode profileJsonNode = (JsonNode) context.getContextData().get(OIDCIdentityProvider.USER_INFO);
+            Object value = AbstractJsonUserAttributeMapper.getJsonValue(profileJsonNode, claim);
+            if (value != null) return value;
         }
         return null;
     }

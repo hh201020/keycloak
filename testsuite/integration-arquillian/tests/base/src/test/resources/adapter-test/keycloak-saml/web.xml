@@ -24,14 +24,17 @@
     <module-name>%CONTEXT_PATH%</module-name>
 
     <servlet>
-        <servlet-name>Servlet</servlet-name>
-        <servlet-class>org.keycloak.testsuite.adapter.servlet.SendUsernameServlet</servlet-class>
+        <servlet-name>javax.ws.rs.core.Application</servlet-name>
+        <load-on-startup>1</load-on-startup>
     </servlet>
-
     <servlet-mapping>
-        <servlet-name>Servlet</servlet-name>
+        <servlet-name>javax.ws.rs.core.Application</servlet-name>
         <url-pattern>/*</url-pattern>
     </servlet-mapping>
+
+    <error-page>
+        <location>/error.html</location>
+    </error-page>
 
     <security-constraint>
         <web-resource-collection>

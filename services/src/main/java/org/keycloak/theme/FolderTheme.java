@@ -21,7 +21,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.net.URL;
+import java.nio.charset.Charset;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -46,7 +49,10 @@ public class FolderTheme implements Theme {
 
         File propertiesFile = new File(themeDir, "theme.properties");
         if (propertiesFile .isFile()) {
-            properties.load(new FileInputStream(propertiesFile));
+            Charset encoding = PropertiesUtil.detectEncoding(new FileInputStream(propertiesFile));
+            try (Reader reader = new InputStreamReader(new FileInputStream(propertiesFile), encoding)) {
+                properties.load(reader);
+            }
             parentName = properties.getProperty("parent");
             importName = properties.getProperty("import");
         }
@@ -81,13 +87,7 @@ public class FolderTheme implements Theme {
     }
 
     @Override
-    public InputStream getTemplateAsStream(String name) throws IOException {
-        URL url = getTemplate(name);
-        return url != null ? url.openStream() : null;
-    }
-
-    @Override
-    public URL getResource(String path) throws IOException {
+    public InputStream getResourceAsStream(String path) throws IOException {
         if (File.separatorChar != '/') {
             path = path.replace('/', File.separatorChar);
         }
@@ -96,14 +96,8 @@ public class FolderTheme implements Theme {
         if (!file.isFile() || !file.getCanonicalPath().startsWith(resourcesDir.getCanonicalPath())) {
             return null;
         } else {
-            return file.toURI().toURL();
+            return file.toURI().toURL().openStream();
         }
-    }
-
-    @Override
-    public InputStream getResourceAsStream(String path) throws IOException {
-        URL url = getResource(path);
-        return url != null ? url.openStream() : null;
     }
 
     @Override
@@ -121,7 +115,10 @@ public class FolderTheme implements Theme {
 
         File file = new File(themeDir, "messages" + File.separator + baseBundlename + "_" + locale.toString() + ".properties");
         if (file.isFile()) {
-            m.load(new FileInputStream(file));
+            Charset encoding = PropertiesUtil.detectEncoding(new FileInputStream(file));
+            try (Reader reader = new InputStreamReader(new FileInputStream(file), encoding)) {
+                m.load(reader);
+            }
         }
         return m;
     }

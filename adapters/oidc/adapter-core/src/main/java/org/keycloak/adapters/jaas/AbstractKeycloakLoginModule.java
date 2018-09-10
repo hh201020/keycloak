@@ -17,14 +17,17 @@
 
 package org.keycloak.adapters.jaas;
 
-import java.io.InputStream;
-import java.lang.reflect.Constructor;
-import java.security.Principal;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import org.jboss.logging.Logger;
+import org.keycloak.KeycloakPrincipal;
+import org.keycloak.adapters.AdapterUtils;
+import org.keycloak.adapters.KeycloakDeployment;
+import org.keycloak.adapters.KeycloakDeploymentBuilder;
+import org.keycloak.adapters.RefreshableKeycloakSecurityContext;
+import org.keycloak.adapters.rotation.AdapterRSATokenVerifier;
+import org.keycloak.common.VerificationException;
+import org.keycloak.common.util.FindFile;
+import org.keycloak.common.util.reflections.Reflections;
+import org.keycloak.representations.AccessToken;
 
 import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
@@ -35,18 +38,17 @@ import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
 import javax.security.auth.spi.LoginModule;
 
-import org.jboss.logging.Logger;
-import org.keycloak.KeycloakPrincipal;
-import org.keycloak.RSATokenVerifier;
-import org.keycloak.common.VerificationException;
-import org.keycloak.adapters.AdapterDeploymentContext;
-import org.keycloak.adapters.AdapterUtils;
-import org.keycloak.common.util.FindFile;
-import org.keycloak.adapters.KeycloakDeployment;
-import org.keycloak.adapters.KeycloakDeploymentBuilder;
-import org.keycloak.adapters.RefreshableKeycloakSecurityContext;
-import org.keycloak.representations.AccessToken;
-import org.keycloak.common.util.reflections.Reflections;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Constructor;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.security.Principal;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -55,7 +57,7 @@ public abstract class AbstractKeycloakLoginModule implements LoginModule {
 
     public static final String KEYCLOAK_CONFIG_FILE_OPTION = "keycloak-config-file";
     public static final String ROLE_PRINCIPAL_CLASS_OPTION = "role-principal-class";
-
+    public static final String PROFILE_RESOURCE = "profile:";
     protected Subject subject;
     protected CallbackHandler callbackHandler;
     protected Auth auth;
@@ -86,17 +88,27 @@ public abstract class AbstractKeycloakLoginModule implements LoginModule {
 
     protected KeycloakDeployment resolveDeployment(String keycloakConfigFile) {
         try {
-            InputStream is = FindFile.findFile(keycloakConfigFile);
-            KeycloakDeployment kd = KeycloakDeploymentBuilder.build(is);
-            if (kd.getRealmKey() == null) {
-                new AdapterDeploymentContext().resolveRealmKey(kd);
+            InputStream is = null;
+            if (keycloakConfigFile.startsWith(PROFILE_RESOURCE)) {
+                try {
+                    is = new URL(keycloakConfigFile).openStream();
+                } catch (MalformedURLException mfue) {
+                    throw new RuntimeException(mfue);
+                } catch (IOException ioe) {
+                    throw new RuntimeException(ioe);
+                }
+            } else {
+                is = FindFile.findFile(keycloakConfigFile);
             }
+            KeycloakDeployment kd = KeycloakDeploymentBuilder.build(is);
             return kd;
+
         } catch (RuntimeException e) {
             getLogger().debug("Unable to find or parse file " + keycloakConfigFile + " due to " + e.getMessage(), e);
             throw e;
         }
     }
+    
 
     @Override
     public boolean login() throws LoginException {
@@ -190,7 +202,7 @@ public abstract class AbstractKeycloakLoginModule implements LoginModule {
 
 
     protected Auth bearerAuth(String tokenString) throws VerificationException {
-        AccessToken token = RSATokenVerifier.verifyToken(tokenString, deployment.getRealmKey(), deployment.getRealmInfoUrl());
+        AccessToken token = AdapterRSATokenVerifier.verifyToken(tokenString, deployment);
 
         boolean verifyCaller;
         if (deployment.isUseResourceRoleMappings()) {

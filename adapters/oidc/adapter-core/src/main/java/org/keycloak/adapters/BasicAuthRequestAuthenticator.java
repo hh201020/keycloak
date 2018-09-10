@@ -24,16 +24,17 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.util.EntityUtils;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.adapters.authentication.ClientCredentialsProviderUtils;
 import org.keycloak.adapters.spi.AuthOutcome;
 import org.keycloak.adapters.spi.HttpFacade;
 import org.keycloak.common.util.Base64;
+import org.keycloak.common.util.KeycloakUriBuilder;
 import org.keycloak.constants.ServiceUrlConstants;
 import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.util.JsonSerialization;
-import org.keycloak.common.util.KeycloakUriBuilder;
 
 import java.util.List;
 
@@ -70,9 +71,10 @@ public class BasicAuthRequestAuthenticator extends BearerTokenRequestAuthenticat
         AccessTokenResponse atr=null;        
         try {
             String userpw=new String(Base64.decode(tokenString));
-            String[] parts=userpw.split(":");
-            
-            atr = getToken(parts[0], parts[1]);
+            int seperatorIndex = userpw.indexOf(":");
+            String user = userpw.substring(0, seperatorIndex);
+            String pw = userpw.substring(seperatorIndex + 1);
+            atr = getToken(user, pw);
             tokenString = atr.getToken();
         } catch (Exception e) {
             log.debug("Failed to obtain token", e);
@@ -81,9 +83,9 @@ public class BasicAuthRequestAuthenticator extends BearerTokenRequestAuthenticat
         }
 
         return authenticateToken(exchange, atr.getToken());
-    }
-    
-    private AccessTokenResponse getToken(String username, String password) throws Exception {
+    } 
+ 
+    protected AccessTokenResponse getToken(String username, String password) throws Exception {
     	AccessTokenResponse tokenResponse=null;
     	HttpClient client = deployment.getClient();
 
@@ -104,6 +106,7 @@ public class BasicAuthRequestAuthenticator extends BearerTokenRequestAuthenticat
         int status = response.getStatusLine().getStatusCode();
         HttpEntity entity = response.getEntity();
         if (status != 200) {
+            EntityUtils.consumeQuietly(entity);
             throw new java.io.IOException("Bad status: " + status);
         }
         if (entity == null) {

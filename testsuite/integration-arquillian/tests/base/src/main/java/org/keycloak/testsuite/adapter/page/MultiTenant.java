@@ -17,12 +17,13 @@
 
 package org.keycloak.testsuite.adapter.page;
 
-import java.net.MalformedURLException;
-import java.net.URL;
-import javax.ws.rs.core.UriBuilder;
 import org.jboss.arquillian.container.test.api.OperateOnDeployment;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.keycloak.testsuite.page.AbstractPageWithInjectedUrl;
+
+import javax.ws.rs.core.UriBuilder;
+import java.net.MalformedURLException;
+import java.net.URL;
 
 /**
  *
@@ -43,14 +44,14 @@ public class MultiTenant extends AbstractPageWithInjectedUrl {
 
     @Override
     public UriBuilder createUriBuilder() {
-        return super.createUriBuilder().path("/").queryParam("realm", "{tenantRealm}");
+        return super.createUriBuilder().path("{tenantRealm}");
     }
 
     public URL getTenantRealmUrl(String realm) {
         try {
             return getUriBuilder().build(realm).toURL();
         } catch (MalformedURLException ex) {
-            throw new IllegalStateException("Page URL is malformed.");
+            throw new IllegalStateException("Page URL is malformed.", ex);
         }
     }
 

@@ -16,18 +16,39 @@
  */
 package org.keycloak.services.resources;
 
-import org.keycloak.Config;
-import org.keycloak.theme.FreeMarkerUtil;
-import org.keycloak.theme.Theme;
-import org.keycloak.theme.ThemeProvider;
-import org.keycloak.models.KeycloakSession;
+import org.jboss.logging.Logger;
+import org.keycloak.common.ClientConnection;
+import org.keycloak.common.Version;
+import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.MimeTypeUtil;
+import org.keycloak.models.BrowserSecurityHeaders;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.services.ForbiddenException;
 import org.keycloak.services.ServicesLogger;
+import org.keycloak.services.Urls;
 import org.keycloak.services.managers.ApplianceBootstrap;
 import org.keycloak.services.util.CacheControlUtil;
+import org.keycloak.services.util.CookieHelper;
+import org.keycloak.theme.BrowserSecurityHeaderSetup;
+import org.keycloak.theme.FreeMarkerUtil;
+import org.keycloak.theme.Theme;
+import org.keycloak.utils.MediaType;
 
-import javax.ws.rs.*;
-import javax.ws.rs.core.*;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.Cookie;
+import javax.ws.rs.core.HttpHeaders;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.ResponseBuilder;
+import javax.ws.rs.core.Response.Status;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -43,15 +64,17 @@ import java.util.Map;
 @Path("/")
 public class WelcomeResource {
 
-    private static final ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
+    protected static final Logger logger = Logger.getLogger(WelcomeResource.class);
+
+    private static final String KEYCLOAK_STATE_CHECKER = "WELCOME_STATE_CHECKER";
 
     private boolean bootstrap;
 
     @Context
-    private UriInfo uriInfo;
+    protected HttpHeaders headers;
 
     @Context
-    protected KeycloakSession session;
+    private KeycloakSession session;
 
     public WelcomeResource(boolean bootstrap) {
         this.bootstrap = bootstrap;
@@ -64,11 +87,11 @@ public class WelcomeResource {
      * @throws URISyntaxException
      */
     @GET
-    @Produces("text/html")
+    @Produces(MediaType.TEXT_HTML_UTF_8)
     public Response getWelcomePage() throws URISyntaxException {
         checkBootstrap();
 
-        String requestUri = uriInfo.getRequestUri().toString();
+        String requestUri = session.getContext().getUri().getRequestUri().toString();
         if (!requestUri.endsWith("/")) {
             return Response.seeOther(new URI(requestUri + "/")).build();
         } else {
@@ -78,6 +101,7 @@ public class WelcomeResource {
 
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.TEXT_HTML_UTF_8)
     public Response createUser(final MultivaluedMap<String, String> formData) {
         checkBootstrap();
 
@@ -85,9 +109,11 @@ public class WelcomeResource {
             return createWelcomePage(null, null);
         } else {
             if (!isLocal()) {
-                logger.rejectedNonLocalAttemptToCreateInitialUser(session.getContext().getConnection().getRemoteAddr());
+                ServicesLogger.LOGGER.rejectedNonLocalAttemptToCreateInitialUser(session.getContext().getConnection().getRemoteAddr());
                 throw new WebApplicationException(Response.Status.BAD_REQUEST);
             }
+
+            csrfCheck(formData);
 
             String username = formData.getFirst("username");
             String password = formData.getFirst("password");
@@ -105,15 +131,17 @@ public class WelcomeResource {
                 return createWelcomePage(null, "Password and confirmation doesn't match");
             }
 
+            expireCsrfCookie();
+
             ApplianceBootstrap applianceBootstrap = new ApplianceBootstrap(session);
             if (applianceBootstrap.isNoMasterUser()) {
                 bootstrap = false;
                 applianceBootstrap.createMasterRealmUser(username, password);
 
-                logger.createdInitialAdminUser(username);
+                ServicesLogger.LOGGER.createdInitialAdminUser(username);
                 return createWelcomePage("User created", null);
             } else {
-                logger.initialUserAlreadyCreated();
+                ServicesLogger.LOGGER.initialUserAlreadyCreated();
                 return createWelcomePage(null, "Users already exists");
             }
         }
@@ -127,7 +155,7 @@ public class WelcomeResource {
      */
     @GET
     @Path("/welcome-content/{path}")
-    @Produces("text/html")
+    @Produces(MediaType.TEXT_HTML_UTF_8)
     public Response getResource(@PathParam("path") String path) {
         try {
             InputStream resource = getTheme().getResourceAsStream(path);
@@ -145,10 +173,27 @@ public class WelcomeResource {
 
     private Response createWelcomePage(String successMessage, String errorMessage) {
         try {
-            Map<String, Object> map = new HashMap<>();
-            map.put("bootstrap", bootstrap);
+          Theme theme = getTheme();
+
+          Map<String, Object> map = new HashMap<>();
+
+          map.put("productName", Version.NAME);
+
+          map.put("properties", theme.getProperties());
+
+          URI uri = Urls.themeRoot(session.getContext().getUri().getBaseUri());
+          String resourcesPath = uri.getPath() + "/" + theme.getType().toString().toLowerCase() +"/" + theme.getName();
+          map.put("resourcesPath", resourcesPath);
+
+           map.put("bootstrap", bootstrap);
             if (bootstrap) {
-                map.put("localUser", isLocal());
+                boolean isLocal = isLocal();
+                map.put("localUser", isLocal);
+
+                if (isLocal) {
+                    String stateChecker = setCsrfCookie();
+                    map.put("stateChecker", stateChecker);
+                }
             }
             if (successMessage != null) {
                 map.put("successMessage", successMessage);
@@ -157,18 +202,21 @@ public class WelcomeResource {
                 map.put("errorMessage", errorMessage);
             }
             FreeMarkerUtil freeMarkerUtil = new FreeMarkerUtil();
-            String result = freeMarkerUtil.processTemplate(map, "index.ftl", getTheme());
-            return Response.status(errorMessage == null ? Response.Status.OK : Response.Status.BAD_REQUEST).entity(result).cacheControl(CacheControlUtil.noCache()).build();
+            String result = freeMarkerUtil.processTemplate(map, "index.ftl", theme);
+
+            ResponseBuilder rb = Response.status(errorMessage == null ? Status.OK : Status.BAD_REQUEST)
+                    .entity(result)
+                    .cacheControl(CacheControlUtil.noCache());
+            BrowserSecurityHeaderSetup.headers(rb, BrowserSecurityHeaders.defaultHeaders);
+            return rb.build();
         } catch (Exception e) {
             throw new WebApplicationException(Response.Status.INTERNAL_SERVER_ERROR);
         }
     }
 
     private Theme getTheme() {
-        Config.Scope config = Config.scope("theme");
-        ThemeProvider themeProvider = session.getProvider(ThemeProvider.class, "extending");
         try {
-            return themeProvider.getTheme(config.get("welcomeTheme"), Theme.Type.WELCOME);
+            return session.theme().getTheme(Theme.Type.WELCOME);
         } catch (IOException e) {
             throw new WebApplicationException(Response.Status.INTERNAL_SERVER_ERROR);
         }
@@ -182,10 +230,49 @@ public class WelcomeResource {
 
     private boolean isLocal() {
         try {
-            InetAddress inetAddress = InetAddress.getByName(session.getContext().getConnection().getRemoteAddr());
-            return inetAddress.isAnyLocalAddress() || inetAddress.isLoopbackAddress();
+            ClientConnection clientConnection = session.getContext().getConnection();
+            InetAddress remoteInetAddress = InetAddress.getByName(clientConnection.getRemoteAddr());
+            InetAddress localInetAddress = InetAddress.getByName(clientConnection.getLocalAddr());
+            String xForwardedFor = headers.getHeaderString("X-Forwarded-For");
+            logger.debugf("Checking WelcomePage. Remote address: %s, Local address: %s, X-Forwarded-For header: %s", remoteInetAddress.toString(), localInetAddress.toString(), xForwardedFor);
+
+            // Access through AJP protocol (loadbalancer) may cause that remoteAddress is "127.0.0.1".
+            // So consider that welcome page accessed locally just if it was accessed really through "localhost" URL and without loadbalancer (x-forwarded-for header is empty).
+            return isLocalAddress(remoteInetAddress) && isLocalAddress(localInetAddress) && xForwardedFor == null;
         } catch (UnknownHostException e) {
             throw new WebApplicationException(Response.Status.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private boolean isLocalAddress(InetAddress inetAddress) {
+        return inetAddress.isAnyLocalAddress() || inetAddress.isLoopbackAddress();
+    }
+
+    private String setCsrfCookie() {
+        String stateChecker = Base64Url.encode(KeycloakModelUtils.generateSecret());
+        String cookiePath = session.getContext().getUri().getPath();
+        boolean secureOnly = session.getContext().getUri().getRequestUri().getScheme().equalsIgnoreCase("https");
+        CookieHelper.addCookie(KEYCLOAK_STATE_CHECKER, stateChecker, cookiePath, null, null, 300, secureOnly, true);
+        return stateChecker;
+    }
+
+    private void expireCsrfCookie() {
+        String cookiePath = session.getContext().getUri().getPath();
+        boolean secureOnly = session.getContext().getUri().getRequestUri().getScheme().equalsIgnoreCase("https");
+        CookieHelper.addCookie(KEYCLOAK_STATE_CHECKER, "", cookiePath, null, null, 0, secureOnly, true);
+    }
+
+    private void csrfCheck(final MultivaluedMap<String, String> formData) {
+        String formStateChecker = formData.getFirst("stateChecker");
+        Cookie cookie = headers.getCookies().get(KEYCLOAK_STATE_CHECKER);
+        if (cookie == null) {
+            throw new ForbiddenException();
+        }
+
+        String cookieStateChecker = cookie.getValue();
+
+        if (cookieStateChecker == null || !cookieStateChecker.equals(formStateChecker)) {
+            throw new ForbiddenException();
         }
     }
 

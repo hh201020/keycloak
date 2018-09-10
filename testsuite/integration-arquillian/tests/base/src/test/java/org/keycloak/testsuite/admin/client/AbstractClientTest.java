@@ -17,12 +17,25 @@
 
 package org.keycloak.testsuite.admin.client;
 
-import javax.ws.rs.core.Response;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
 import org.keycloak.admin.client.resource.ClientResource;
+import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.AbstractAuthTest;
+import org.keycloak.testsuite.Assert;
 import org.keycloak.testsuite.admin.ApiUtil;
+import org.keycloak.testsuite.events.EventsListenerProviderFactory;
+import org.keycloak.testsuite.util.AdminEventPaths;
+import org.keycloak.testsuite.util.AssertAdminEvents;
+import org.keycloak.testsuite.util.RealmBuilder;
+
+import javax.ws.rs.core.Response;
+import java.util.List;
 
 /**
  *
@@ -30,33 +43,107 @@ import org.keycloak.testsuite.admin.ApiUtil;
  */
 public abstract class AbstractClientTest extends AbstractAuthTest {
 
+    @Rule
+    public AssertAdminEvents assertAdminEvents = new AssertAdminEvents(this);
+
+    @Override
+    public void setDefaultPageUriParameters() {
+        super.setDefaultPageUriParameters();
+        testRealmPage.setAuthRealm("test");
+        accountPage.setAuthRealm("test");
+    }    
+
+    @Before
+    public void setupAdminEvents() {
+        RealmRepresentation realm = testRealmResource().toRepresentation();
+        if (realm.getEventsListeners() == null || !realm.getEventsListeners().contains(EventsListenerProviderFactory.PROVIDER_ID)) {
+            realm = RealmBuilder.edit(testRealmResource().toRepresentation()).testEventListener().build();
+            testRealmResource().update(realm);
+        }
+    }
+
+    @After
+    public void tearDownAdminEvents() {
+        RealmRepresentation realm = RealmBuilder.edit(testRealmResource().toRepresentation()).removeTestEventListener().build();
+        testRealmResource().update(realm);
+    }
+
     protected RealmRepresentation realmRep() {
         return testRealmResource().toRepresentation();
     }
 
-    protected void createOidcClient(String name) {
+    protected String getRealmId() {
+        return "test";
+    }
+
+    // returns UserRepresentation retrieved from server, with all fields, including id
+    protected UserRepresentation getFullUserRep(String userName) {
+        // the search returns all users who has userName contained in their username.
+        List<UserRepresentation> results = testRealmResource().users().search(userName, null, null, null, null, null);
+        UserRepresentation result = null;
+        for (UserRepresentation user : results) {
+            if (userName.equals(user.getUsername())) {
+                result = user;
+            }
+        }
+        Assert.assertNotNull("Did not find user with username " + userName, result);
+        return result;
+    }
+
+    protected String createOidcClient(String name) {
+        return createClient(createOidcClientRep(name));
+    }
+
+    protected String createOidcBearerOnlyClient(String name) {
+        ClientRepresentation clientRep = createOidcClientRep(name);
+        clientRep.setBearerOnly(Boolean.TRUE);
+        clientRep.setPublicClient(Boolean.FALSE);
+        return createClient(clientRep);
+    }
+
+    protected String createOidcBearerOnlyClientWithAuthz(String name) {
+        ClientRepresentation clientRep = createOidcClientRep(name);
+        clientRep.setBearerOnly(Boolean.TRUE);
+        clientRep.setPublicClient(Boolean.FALSE);
+        clientRep.setAuthorizationServicesEnabled(Boolean.TRUE);
+        clientRep.setServiceAccountsEnabled(Boolean.TRUE);
+        String id = createClient(clientRep);
+        assertAdminEvents.assertEvent(getRealmId(), OperationType.CREATE, AdminEventPaths.clientResourcePath(id), ResourceType.AUTHORIZATION_RESOURCE_SERVER);
+        return id;
+    }
+
+    protected ClientRepresentation createOidcClientRep(String name) {
         ClientRepresentation clientRep = new ClientRepresentation();
         clientRep.setClientId(name);
         clientRep.setName(name);
         clientRep.setRootUrl("foo");
-        clientRep.setProtocol("openid-connect");
-        createClient(clientRep);
+        clientRep.setProtocol("openid-connect"); 
+        return clientRep;
     }
 
-        protected void createSamlClient(String name) {
+    protected String createSamlClient(String name) {
         ClientRepresentation clientRep = new ClientRepresentation();
         clientRep.setClientId(name);
         clientRep.setName(name);
         clientRep.setProtocol("saml");
         clientRep.setAdminUrl("samlEndpoint");
-        createClient(clientRep);
+        return createClient(clientRep);
     }
 
-    protected void createClient(ClientRepresentation clientRep) {
+    protected String createClient(ClientRepresentation clientRep) {
         Response resp = testRealmResource().clients().create(clientRep);
-        // for some reason, findAll() will later fail unless readEntity is called here
-        resp.readEntity(String.class);
-        //testRealmResource().clients().findAll();
+        resp.close();
+        String id = ApiUtil.getCreatedId(resp);
+
+        assertAdminEvents.assertEvent(getRealmId(), OperationType.CREATE, AdminEventPaths.clientResourcePath(id), clientRep, ResourceType.CLIENT);
+
+        return id;
+    }
+
+    protected void removeClient(String clientDbId) {
+        testRealmResource().clients().get(clientDbId).remove();
+
+        assertAdminEvents.assertEvent(getRealmId(), OperationType.DELETE, AdminEventPaths.clientResourcePath(clientDbId), ResourceType.CLIENT);
     }
 
     protected ClientRepresentation findClientRepresentation(String name) {
@@ -67,6 +154,10 @@ public abstract class AbstractClientTest extends AbstractAuthTest {
 
     protected ClientResource findClientResource(String name) {
         return ApiUtil.findClientResourceByName(testRealmResource(), name);
+    }
+
+    protected ClientResource findClientResourceById(String id) {
+        return ApiUtil.findClientResourceByClientId(testRealmResource(), id);
     }
 
 }

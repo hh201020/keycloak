@@ -25,8 +25,9 @@ import java.net.URL;
 /**
  * @author mhajas
  */
-public class SalesPostServlet extends SAMLServletWithLogout {
+public class SalesPostServlet extends SAMLServlet {
     public static final String DEPLOYMENT_NAME = "sales-post";
+    public static final String CLIENT_NAME = "http://localhost:8081/sales-post/";
 
     @ArquillianResource
     @OperateOnDeployment(DEPLOYMENT_NAME)

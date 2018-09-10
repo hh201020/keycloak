@@ -17,31 +17,32 @@
  */
 package org.keycloak.testsuite.console.realm;
 
-import java.util.HashSet;
-import java.util.Set;
 import org.jboss.arquillian.graphene.page.Page;
 import org.junit.Assert;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 import org.junit.Before;
 import org.junit.Test;
-import static org.keycloak.representations.idm.CredentialRepresentation.PASSWORD;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
-import static org.keycloak.testsuite.admin.ApiUtil.createUserAndResetPasswordWithAdminClient;
-import static org.keycloak.testsuite.admin.Users.setPasswordFor;
-import static org.keycloak.testsuite.auth.page.AuthRealm.TEST;
 import org.keycloak.testsuite.auth.page.account.Account;
-import org.keycloak.testsuite.console.page.realm.LoginSettings;
 import org.keycloak.testsuite.auth.page.login.Registration;
 import org.keycloak.testsuite.auth.page.login.ResetCredentials;
 import org.keycloak.testsuite.auth.page.login.VerifyEmail;
+import org.keycloak.testsuite.console.page.realm.LoginSettings;
 import org.keycloak.testsuite.console.page.realm.LoginSettings.RequireSSLOption;
 import org.keycloak.testsuite.util.MailServer;
-import static org.keycloak.testsuite.util.URLAssert.assertCurrentUrlEquals;
-import static org.keycloak.testsuite.util.URLAssert.assertCurrentUrlStartsWith;
-
 import org.openqa.selenium.Cookie;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.keycloak.representations.idm.CredentialRepresentation.PASSWORD;
+import static org.keycloak.testsuite.admin.ApiUtil.createUserAndResetPasswordWithAdminClient;
+import static org.keycloak.testsuite.admin.Users.setPasswordFor;
+import static org.keycloak.testsuite.auth.page.AuthRealm.TEST;
+import static org.keycloak.testsuite.util.URLAssert.assertCurrentUrlStartsWith;
+import static org.keycloak.testsuite.util.URLAssert.assertCurrentUrlStartsWithLoginUrlOf;
 
 /**
  *
@@ -75,7 +76,6 @@ public class LoginSettingsTest extends AbstractRealmTest {
     public void beforeLoginSettingsTest() {
 //        tabs().login();
         loginSettingsPage.navigateTo();
-        assertCurrentUrlEquals(loginSettingsPage);
     }
     
     @Test
@@ -91,8 +91,8 @@ public class LoginSettingsTest extends AbstractRealmTest {
         testRealmAdminConsolePage.navigateTo();
         testRealmLoginPage.form().register();
         assertCurrentUrlStartsWith(testRealmRegistrationPage);
-        testRealmRegistrationPage.waitForConfirmPasswordInputPresent();
-        testRealmRegistrationPage.waitForUsernameInputPresent();
+        assertTrue(testRealmRegistrationPage.isConfirmPasswordPresent());
+        assertTrue(testRealmRegistrationPage.isUsernamePresent());
         log.info("verified registration is enabled");
 
         // test email as username
@@ -107,8 +107,8 @@ public class LoginSettingsTest extends AbstractRealmTest {
         testRealmAdminConsolePage.navigateTo();
         testRealmLoginPage.form().register();
         assertCurrentUrlStartsWith(testRealmRegistrationPage);
-        testRealmRegistrationPage.waitForConfirmPasswordInputPresent();
-        testRealmRegistrationPage.waitForUsernameInputNotPresent();
+        assertTrue(testRealmRegistrationPage.isConfirmPasswordPresent());
+        assertFalse(testRealmRegistrationPage.isUsernamePresent());
         log.info("verified email as username");
 
         // test user reg. disabled
@@ -121,7 +121,7 @@ public class LoginSettingsTest extends AbstractRealmTest {
         log.debug("disabled");
         
         testRealmAdminConsolePage.navigateTo();
-        testRealmLoginPage.form().waitForRegisterLinkNotPresent();
+        assertFalse(testRealmLoginPage.form().isRegisterLinkPresent());
         log.info("verified regisration is disabled");
     }
     
@@ -137,15 +137,16 @@ public class LoginSettingsTest extends AbstractRealmTest {
         log.info("edit username");
         testAccountPage.navigateTo();
         testRealmLoginPage.form().login(testUser);
-        testAccountPage.waitForAccountLinkPresent();
+        assertCurrentUrlStartsWith(testAccountPage);
         testAccountPage.setUsername(NEW_USERNAME);
         testAccountPage.save();
         testAccountPage.signOut();
         log.debug("edited");
         
         log.info("log in with edited username");
+        assertCurrentUrlStartsWithLoginUrlOf(testAccountPage);
         testRealmLoginPage.form().login(NEW_USERNAME, PASSWORD);
-        testAccountPage.waitForAccountLinkPresent();
+        assertCurrentUrlStartsWith(testAccountPage);
         log.debug("user is logged in with edited username");
         
         log.info("disabling edit username");
@@ -185,7 +186,7 @@ public class LoginSettingsTest extends AbstractRealmTest {
         log.debug("disabled");
         
         testRealmAdminConsolePage.navigateTo();
-        testRealmLoginPage.form().waitForResetPasswordLinkNotPresent();
+        assertFalse(testRealmLoginPage.form().isForgotPasswordLinkPresent());
         log.info("verified reset password is disabled");
     }
     
@@ -203,6 +204,7 @@ public class LoginSettingsTest extends AbstractRealmTest {
         testAccountPage.navigateTo();
         testRealmLoginPage.form().rememberMe(true);
         testRealmLoginPage.form().login(testUser);
+        assertCurrentUrlStartsWith(testAccountPage);
         
         assertTrue("Cookie KEYCLOAK_REMEMBER_ME should be present.", getCookieNames().contains("KEYCLOAK_REMEMBER_ME"));
         
@@ -218,8 +220,8 @@ public class LoginSettingsTest extends AbstractRealmTest {
         
         testAccountPage.navigateTo();
         testAccountPage.signOut();
-        testRealmLoginPage.form().waitForLoginButtonPresent();
-        testRealmLoginPage.form().waitForRememberMeNotPresent();
+        assertTrue(testRealmLoginPage.form().isLoginButtonPresent());
+        assertFalse(testRealmLoginPage.form().isRememberMePresent());
         log.info("verified remember me is disabled");
         
     }
@@ -266,7 +268,7 @@ public class LoginSettingsTest extends AbstractRealmTest {
         log.info("log in as new user");
         testAccountPage.navigateTo();        
         testRealmLoginPage.form().login(newUser);
-        testAccountPage.waitForAccountLinkPresent();
+        assertCurrentUrlStartsWith(testAccountPage);
                 
         log.info("verified verify email is disabled");
         

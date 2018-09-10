@@ -17,29 +17,34 @@
 
 package org.keycloak.protocol;
 
-import java.util.List;
+import org.jboss.logging.Logger;
+import org.jboss.resteasy.spi.HttpRequest;
+import org.keycloak.authentication.AuthenticationProcessor;
+import org.keycloak.common.ClientConnection;
+import org.keycloak.events.Details;
+import org.keycloak.events.Errors;
+import org.keycloak.events.EventBuilder;
+import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.models.AuthenticationFlowModel;
+import org.keycloak.models.ClientModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserSessionModel;
+import org.keycloak.models.utils.AuthenticationFlowResolver;
+import org.keycloak.protocol.LoginProtocol.Error;
+import org.keycloak.services.ErrorPageException;
+import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.managers.AuthenticationSessionManager;
+import org.keycloak.services.managers.UserSessionCrossDCManager;
+import org.keycloak.services.messages.Messages;
+import org.keycloak.services.resources.LoginActionsService;
+import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.sessions.RootAuthenticationSessionModel;
 
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
-
-import org.jboss.resteasy.spi.HttpRequest;
-import org.keycloak.authentication.AuthenticationProcessor;
-import org.keycloak.common.ClientConnection;
-import org.keycloak.events.Details;
-import org.keycloak.events.EventBuilder;
-import org.keycloak.models.AuthenticationFlowModel;
-import org.keycloak.models.ClientSessionModel;
-import org.keycloak.models.IdentityProviderModel;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.protocol.LoginProtocol.Error;
-import org.keycloak.services.ServicesLogger;
-import org.keycloak.services.Urls;
-import org.keycloak.services.managers.AuthenticationManager;
-import org.keycloak.services.managers.ClientSessionCode;
-import org.keycloak.services.resources.LoginActionsService;
 
 /**
  * Common base class for Authorization REST endpoints implementation, which have to be implemented by each protocol.
@@ -48,18 +53,18 @@ import org.keycloak.services.resources.LoginActionsService;
  */
 public abstract class AuthorizationEndpointBase {
 
-    private static final ServicesLogger logger = ServicesLogger.ROOT_LOGGER;
+    private static final Logger logger = Logger.getLogger(AuthorizationEndpointBase.class);
+
+    public static final String APP_INITIATED_FLOW = "APP_INITIATED_FLOW";
 
     protected RealmModel realm;
     protected EventBuilder event;
     protected AuthenticationManager authManager;
 
     @Context
-    protected UriInfo uriInfo;
-    @Context
     protected HttpHeaders headers;
     @Context
-    protected HttpRequest request;
+    protected HttpRequest httpRequest;
     @Context
     protected KeycloakSession session;
     @Context
@@ -70,9 +75,9 @@ public abstract class AuthorizationEndpointBase {
         this.event = event;
     }
 
-    protected AuthenticationProcessor createProcessor(ClientSessionModel clientSession, String flowId, String flowPath) {
+    protected AuthenticationProcessor createProcessor(AuthenticationSessionModel authSession, String flowId, String flowPath) {
         AuthenticationProcessor processor = new AuthenticationProcessor();
-        processor.setClientSession(clientSession)
+        processor.setAuthenticationSession(authSession)
                 .setFlowPath(flowPath)
                 .setFlowId(flowId)
                 .setBrowserFlow(true)
@@ -80,59 +85,56 @@ public abstract class AuthorizationEndpointBase {
                 .setEventBuilder(event)
                 .setRealm(realm)
                 .setSession(session)
-                .setUriInfo(uriInfo)
-                .setRequest(request);
+                .setUriInfo(session.getContext().getUri())
+                .setRequest(httpRequest);
+
+        authSession.setAuthNote(AuthenticationProcessor.CURRENT_FLOW_PATH, flowPath);
+
         return processor;
     }
 
     /**
      * Common method to handle browser authentication request in protocols unified way.
      *
-     * @param clientSession for current request
+     * @param authSession for current request
      * @param protocol handler for protocol used to initiate login
      * @param isPassive set to true if login should be passive (without login screen shown)
      * @param redirectToAuthentication if true redirect to flow url.  If initial call to protocol is a POST, you probably want to do this.  This is so we can disable the back button on browser
      * @return response to be returned to the browser
      */
-    protected Response handleBrowserAuthenticationRequest(ClientSessionModel clientSession, LoginProtocol protocol, boolean isPassive, boolean redirectToAuthentication) {
-
-        List<IdentityProviderModel> identityProviders = realm.getIdentityProviders();
-        for (IdentityProviderModel identityProvider : identityProviders) {
-            if (identityProvider.isEnabled() && identityProvider.isAuthenticateByDefault()) {
-                // TODO if we are isPassive we should propagate this flag to default identity provider also if possible
-                return buildRedirectToIdentityProvider(identityProvider.getAlias(), new ClientSessionCode(realm, clientSession).getCode());
-            }
-        }
-
-        AuthenticationFlowModel flow = getAuthenticationFlow();
+    protected Response handleBrowserAuthenticationRequest(AuthenticationSessionModel authSession, LoginProtocol protocol, boolean isPassive, boolean redirectToAuthentication) {
+        AuthenticationFlowModel flow = getAuthenticationFlow(authSession);
         String flowId = flow.getId();
-        AuthenticationProcessor processor = createProcessor(clientSession, flowId, LoginActionsService.AUTHENTICATE_PATH);
-        event.detail(Details.CODE_ID, clientSession.getId());
+        AuthenticationProcessor processor = createProcessor(authSession, flowId, LoginActionsService.AUTHENTICATE_PATH);
+        event.detail(Details.CODE_ID, authSession.getParentSession().getId());
         if (isPassive) {
             // OIDC prompt == NONE or SAML 2 IsPassive flag
             // This means that client is just checking if the user is already completely logged in.
             // We cancel login if any authentication action or required action is required
             try {
                 if (processor.authenticateOnly() == null) {
-                    processor.attachSession();
+                    // processor.attachSession();
                 } else {
-                    Response response = protocol.sendError(clientSession, Error.PASSIVE_LOGIN_REQUIRED);
-                    session.sessions().removeClientSession(realm, clientSession);
+                    Response response = protocol.sendError(authSession, Error.PASSIVE_LOGIN_REQUIRED);
                     return response;
                 }
-                if (processor.isActionRequired()) {
-                    Response response = protocol.sendError(clientSession, Error.PASSIVE_INTERACTION_REQUIRED);
-                    session.sessions().removeClientSession(realm, clientSession);
-                    return response;
 
+                AuthenticationManager.setClientScopesInSession(authSession);
+
+                if (processor.nextRequiredAction() != null) {
+                    Response response = protocol.sendError(authSession, Error.PASSIVE_INTERACTION_REQUIRED);
+                    return response;
                 }
+
+                // Attach session once no requiredActions or other things are required
+                processor.attachSession();
             } catch (Exception e) {
                 return processor.handleBrowserException(e);
             }
             return processor.finishAuthentication(protocol);
         } else {
             try {
-                RestartLoginCookie.setRestartCookie(realm, clientConnection, uriInfo, clientSession);
+                RestartLoginCookie.setRestartCookie(session, realm, clientConnection, session.getContext().getUri(), authSession);
                 if (redirectToAuthentication) {
                     return processor.redirectToFlow();
                 }
@@ -143,15 +145,57 @@ public abstract class AuthorizationEndpointBase {
         }
     }
 
-    protected AuthenticationFlowModel getAuthenticationFlow() {
-        return realm.getBrowserFlow();
+    protected AuthenticationFlowModel getAuthenticationFlow(AuthenticationSessionModel authSession) {
+        return AuthenticationFlowResolver.resolveBrowserFlow(authSession);
     }
 
-    protected Response buildRedirectToIdentityProvider(String providerId, String accessCode) {
-        logger.debug("Automatically redirect to identity provider: " + providerId);
-        return Response.temporaryRedirect(
-                Urls.identityProviderAuthnRequest(this.uriInfo.getBaseUri(), providerId, this.realm.getName(), accessCode))
-                .build();
+    protected void checkSsl() {
+        if (!session.getContext().getUri().getBaseUri().getScheme().equals("https") && realm.getSslRequired().isRequired(clientConnection)) {
+            event.error(Errors.SSL_REQUIRED);
+            throw new ErrorPageException(session, Response.Status.BAD_REQUEST, Messages.HTTPS_REQUIRED);
+        }
+    }
+
+    protected void checkRealm() {
+        if (!realm.isEnabled()) {
+            event.error(Errors.REALM_DISABLED);
+            throw new ErrorPageException(session, Response.Status.BAD_REQUEST, Messages.REALM_NOT_ENABLED);
+        }
+    }
+
+    protected AuthenticationSessionModel createAuthenticationSession(ClientModel client, String requestState) {
+        AuthenticationSessionManager manager = new AuthenticationSessionManager(session);
+        RootAuthenticationSessionModel rootAuthSession = manager.getCurrentRootAuthenticationSession(realm);
+
+        AuthenticationSessionModel authSession;
+
+        if (rootAuthSession != null) {
+            authSession = rootAuthSession.createAuthenticationSession(client);
+
+            logger.debugf("Sent request to authz endpoint. Root authentication session with ID '%s' exists. Client is '%s' . Created new authentication session with tab ID: %s",
+                    rootAuthSession.getId(), client.getClientId(), authSession.getTabId());
+        } else {
+            UserSessionCrossDCManager userSessionCrossDCManager = new UserSessionCrossDCManager(session);
+            UserSessionModel userSession = userSessionCrossDCManager.getUserSessionIfExistsRemotely(manager, realm);
+
+            if (userSession != null) {
+                String userSessionId = userSession.getId();
+                rootAuthSession = session.authenticationSessions().createRootAuthenticationSession(userSessionId, realm);
+                authSession = rootAuthSession.createAuthenticationSession(client);
+                logger.debugf("Sent request to authz endpoint. We don't have root authentication session with ID '%s' but we have userSession." +
+                        "Re-created root authentication session with same ID. Client is: %s . New authentication session tab ID: %s", userSessionId, client.getClientId(), authSession.getTabId());
+            } else {
+                rootAuthSession = manager.createAuthenticationSession(realm, true);
+                authSession = rootAuthSession.createAuthenticationSession(client);
+                logger.debugf("Sent request to authz endpoint. Created new root authentication session with ID '%s' . Client: %s . New authentication session tab ID: %s",
+                        rootAuthSession.getId(), client.getClientId(), authSession.getTabId());
+            }
+        }
+
+        session.getProvider(LoginFormsProvider.class).setAuthenticationSession(authSession);
+
+        return authSession;
+
     }
 
 }

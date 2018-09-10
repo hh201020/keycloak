@@ -17,26 +17,9 @@
 
 package org.keycloak.adapters.saml.servlet;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
-import javax.servlet.Filter;
-import javax.servlet.FilterChain;
-import javax.servlet.FilterConfig;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletRequestWrapper;
-import javax.servlet.http.HttpServletResponse;
-
 import org.keycloak.adapters.saml.DefaultSamlDeployment;
 import org.keycloak.adapters.saml.SamlAuthenticator;
+import org.keycloak.adapters.saml.SamlConfigResolver;
 import org.keycloak.adapters.saml.SamlDeployment;
 import org.keycloak.adapters.saml.SamlDeploymentContext;
 import org.keycloak.adapters.saml.SamlSession;
@@ -54,6 +37,24 @@ import org.keycloak.adapters.spi.InMemorySessionIdMapper;
 import org.keycloak.adapters.spi.SessionIdMapper;
 import org.keycloak.saml.common.exceptions.ParsingException;
 
+import javax.servlet.Filter;
+import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletRequestWrapper;
+import javax.servlet.http.HttpServletResponse;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.regex.Pattern;
+
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
@@ -62,6 +63,7 @@ public class SamlFilter implements Filter {
     protected SamlDeploymentContext deploymentContext;
     protected SessionIdMapper idMapper;
     private final static Logger log = Logger.getLogger("" + SamlFilter.class);
+    private static final Pattern PROTOCOL_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*:");
 
     @Override
     public void init(final FilterConfig filterConfig) throws ServletException {
@@ -73,15 +75,12 @@ public class SamlFilter implements Filter {
         String configResolverClass = filterConfig.getInitParameter("keycloak.config.resolver");
         if (configResolverClass != null) {
             try {
-                throw new RuntimeException("Not implemented yet");
-                // KeycloakConfigResolver configResolver = (KeycloakConfigResolver)
-                // context.getLoader().getClassLoader().loadClass(configResolverClass).newInstance();
-                // deploymentContext = new SamlDeploymentContext(configResolver);
-                // log.log(Level.INFO, "Using {0} to resolve Keycloak configuration on a per-request basis.",
-                // configResolverClass);
+                SamlConfigResolver configResolver = (SamlConfigResolver) getClass().getClassLoader().loadClass(configResolverClass).newInstance();
+                deploymentContext = new SamlDeploymentContext(configResolver);
+                log.log(Level.INFO, "Using {0} to resolve Keycloak configuration on a per-request basis.", configResolverClass);
             } catch (Exception ex) {
-                log.log(Level.FINE, "The specified resolver {0} could NOT be loaded. Keycloak is unconfigured and will deny all requests. Reason: {1}", new Object[] { configResolverClass, ex.getMessage() });
-                // deploymentContext = new AdapterDeploymentContext(new KeycloakDeployment());
+                log.log(Level.WARNING, "The specified resolver {0} could NOT be loaded. Keycloak is unconfigured and will deny all requests. Reason: {1}", new Object[] { configResolverClass, ex.getMessage() });
+                deploymentContext = new SamlDeploymentContext(new DefaultSamlDeployment());
             }
         } else {
             String fp = filterConfig.getInitParameter("keycloak.config.file");
@@ -138,7 +137,7 @@ public class SamlFilter implements Filter {
         }
         FilterSamlSessionStore tokenStore = new FilterSamlSessionStore(request, facade, 100000, idMapper);
         boolean isEndpoint = request.getRequestURI().substring(request.getContextPath().length()).endsWith("/saml");
-        SamlAuthenticator authenticator = null;
+        SamlAuthenticator authenticator;
         if (isEndpoint) {
             authenticator = new SamlAuthenticator(facade, deployment, tokenStore) {
                 @Override
@@ -177,9 +176,15 @@ public class SamlFilter implements Filter {
         }
         if (outcome == AuthOutcome.LOGGED_OUT) {
             tokenStore.logoutAccount();
-            if (deployment.getLogoutPage() != null) {
-                RequestDispatcher disp = req.getRequestDispatcher(deployment.getLogoutPage());
-                disp.forward(req, res);
+            String logoutPage = deployment.getLogoutPage();
+            if (logoutPage != null) {
+                if (PROTOCOL_PATTERN.matcher(logoutPage).find()) {
+                    response.sendRedirect(logoutPage);
+                    log.log(Level.FINE, "Redirected to logout page {0}", logoutPage);
+                } else {
+                    RequestDispatcher disp = req.getRequestDispatcher(logoutPage);
+                    disp.forward(req, res);
+                }
                 return;
             }
             chain.doFilter(req, res);

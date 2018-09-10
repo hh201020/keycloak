@@ -57,6 +57,7 @@ public abstract class AbstractClientRegistrationTest extends AbstractKeycloakTes
     public void addTestRealms(List<RealmRepresentation> testRealms) {
         RealmRepresentation rep = new RealmRepresentation();
         rep.setEnabled(true);
+        rep.setId(REALM_NAME);
         rep.setRealm(REALM_NAME);
         rep.setUsers(new LinkedList<UserRepresentation>());
 
@@ -89,6 +90,14 @@ public abstract class AbstractClientRegistrationTest extends AbstractKeycloakTes
 
         rep.getUsers().add(user3);
 
+        UserRepresentation appUser = new UserRepresentation();
+        appUser.setEnabled(true);
+        appUser.setUsername("test-user");
+        appUser.setEmail("test-user@localhost");
+        appUser.setCredentials(credentials);
+
+        rep.getUsers().add(appUser);
+
         testRealms.add(rep);
     }
 
@@ -99,9 +108,9 @@ public abstract class AbstractClientRegistrationTest extends AbstractKeycloakTes
         return response;
     }
 
-    public ClientRepresentation getClient(String clientId) {
+    public ClientRepresentation getClient(String clientUuid) {
         try {
-            return adminClient.realm(REALM_NAME).clients().get(clientId).toRepresentation();
+            return adminClient.realm(REALM_NAME).clients().get(clientUuid).toRepresentation();
         } catch (NotFoundException e) {
             return null;
         }
@@ -120,7 +129,11 @@ public abstract class AbstractClientRegistrationTest extends AbstractKeycloakTes
     }
 
     private String getToken(String username, String password) {
-        return oauthClient.getToken(REALM_NAME, Constants.ADMIN_CLI_CLIENT_ID, null, username, password).getToken();
+        try {
+            return oauth.doGrantAccessTokenRequest(REALM_NAME, username, password, null, Constants.ADMIN_CLI_CLIENT_ID, null).getAccessToken();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
 }

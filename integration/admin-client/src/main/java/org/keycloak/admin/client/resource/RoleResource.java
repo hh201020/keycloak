@@ -18,6 +18,7 @@
 package org.keycloak.admin.client.resource;
 
 import org.keycloak.representations.idm.RoleRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -27,6 +28,7 @@ import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import java.util.List;
 import java.util.Set;
@@ -38,38 +40,65 @@ public interface RoleResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public RoleRepresentation toRepresentation();
+    RoleRepresentation toRepresentation();
 
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
-    public void update(RoleRepresentation roleRepresentation);
+    void update(RoleRepresentation roleRepresentation);
 
     @DELETE
-    public void remove();
+    void remove();
 
     @GET
     @Path("composites")
     @Produces(MediaType.APPLICATION_JSON)
-    public Set<RoleRepresentation> getChildren();
+    Set<RoleRepresentation> getRoleComposites();
 
     @GET
     @Path("composites/realm")
     @Produces(MediaType.APPLICATION_JSON)
-    public Set<RoleRepresentation> getRealmLevelChildren();
+    Set<RoleRepresentation> getRealmRoleComposites();
 
     @GET
-    @Path("composites/application/{appName}")
+    @Path("composites/clients/{appName}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Set<RoleRepresentation> getApplicationLevelChildren(@PathParam("appName") String appName);
+    Set<RoleRepresentation> getClientRoleComposites(@PathParam("appName") String appName);
 
     @POST
     @Path("composites")
     @Consumes(MediaType.APPLICATION_JSON)
-    public void addChildren(List<RoleRepresentation> rolesToAdd);
+    void addComposites(List<RoleRepresentation> rolesToAdd);
 
     @DELETE
     @Path("composites")
     @Consumes(MediaType.APPLICATION_JSON)
-    public void removeChildren(List<RoleRepresentation> rolesToRemove);
+    void deleteComposites(List<RoleRepresentation> rolesToRemove);
+
+    /**
+     * Get role members
+     * <p/>
+     * Returns users that have the given role
+     *
+     * @return a list of users with the given role
+     */
+    @GET
+    @Path("users")
+    @Produces(MediaType.APPLICATION_JSON)
+    Set<UserRepresentation> getRoleUserMembers();
+
+    /**
+     * Get role members
+     * <p/>
+     * Returns users that have the given role, paginated according to the query parameters
+     *
+     * @param firstResult Pagination offset
+     * @param maxResults  Pagination size
+     * @return a list of users with the given role
+     */
+    @GET
+    @Path("users")
+    @Produces(MediaType.APPLICATION_JSON)
+    Set<UserRepresentation> getRoleUserMembers(@QueryParam("first") Integer firstResult,
+                                               @QueryParam("max") Integer maxResults);
 
 }

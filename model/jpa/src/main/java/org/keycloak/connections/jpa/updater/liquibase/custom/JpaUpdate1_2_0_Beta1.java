@@ -16,11 +16,6 @@
  */
 
 package org.keycloak.connections.jpa.updater.liquibase.custom;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.List;
-import java.util.Map;
 
 import liquibase.exception.CustomChangeException;
 import liquibase.exception.DatabaseException;
@@ -33,6 +28,12 @@ import org.keycloak.models.AdminRoles;
 import org.keycloak.models.ClaimMask;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.representations.idm.ProtocolMapperRepresentation;
+
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -326,8 +327,7 @@ public class JpaUpdate1_2_0_Beta1 extends CustomKeycloakTask {
                                 .addColumnValue("ID", mapperId)
                                 .addColumnValue("PROTOCOL", protocolMapper.getProtocol())
                                 .addColumnValue("NAME", protocolMapper.getName())
-                                .addColumnValue("CONSENT_REQUIRED", protocolMapper.isConsentRequired())
-                                .addColumnValue("CONSENT_TEXT", protocolMapper.getConsentText())
+                                .addColumnValue("CONSENT_REQUIRED", false)
                                 .addColumnValue("PROTOCOL_MAPPER_NAME", protocolMapper.getProtocolMapper())
                                 .addColumnValue("CLIENT_ID", resultSet.getString("ID"));
                         statements.add(insert);

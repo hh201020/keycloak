@@ -20,6 +20,7 @@ package org.keycloak.services.resources.admin;
 import org.jboss.resteasy.annotations.cache.NoCache;
 import org.jboss.resteasy.spi.NotFoundException;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -28,6 +29,7 @@ import org.keycloak.models.ScopeContainerModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.ModelToRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
+import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -36,30 +38,37 @@ import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
-
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
 /**
+ * @resource Scope Mappings
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
 public class ScopeMappedClientResource {
     protected RealmModel realm;
-    private RealmAuth auth;
+    protected AdminPermissionEvaluator auth;
+    protected AdminPermissionEvaluator.RequirePermissionCheck managePermission;
+    protected AdminPermissionEvaluator.RequirePermissionCheck viewPermission;
     protected ScopeContainerModel scopeContainer;
     protected KeycloakSession session;
     protected ClientModel scopedClient;
     protected AdminEventBuilder adminEvent;
     
-    public ScopeMappedClientResource(RealmModel realm, RealmAuth auth, ScopeContainerModel scopeContainer, KeycloakSession session, ClientModel scopedClient, AdminEventBuilder adminEvent) {
+    public ScopeMappedClientResource(RealmModel realm, AdminPermissionEvaluator auth, ScopeContainerModel scopeContainer, KeycloakSession session, ClientModel scopedClient, AdminEventBuilder adminEvent,
+                                     AdminPermissionEvaluator.RequirePermissionCheck managePermission,
+                                     AdminPermissionEvaluator.RequirePermissionCheck viewPermission) {
         this.realm = realm;
         this.auth = auth;
         this.scopeContainer = scopeContainer;
         this.session = session;
         this.scopedClient = scopedClient;
-        this.adminEvent = adminEvent;
+        this.adminEvent = adminEvent.resource(ResourceType.CLIENT_SCOPE_MAPPING);
+        this.managePermission = managePermission;
+        this.viewPermission = viewPermission;
     }
 
     /**
@@ -73,7 +82,7 @@ public class ScopeMappedClientResource {
     @Produces(MediaType.APPLICATION_JSON)
     @NoCache
     public List<RoleRepresentation> getClientScopeMappings() {
-        auth.requireView();
+        viewPermission.require();
 
         Set<RoleModel> mappings = KeycloakModelUtils.getClientScopeMappings(scopedClient, scopeContainer); //scopedClient.getClientScopeMappings(client);
         List<RoleRepresentation> mapRep = new ArrayList<RoleRepresentation>();
@@ -95,10 +104,10 @@ public class ScopeMappedClientResource {
     @Produces(MediaType.APPLICATION_JSON)
     @NoCache
     public List<RoleRepresentation> getAvailableClientScopeMappings() {
-        auth.requireView();
+        viewPermission.require();
 
         Set<RoleModel> roles = scopedClient.getRoles();
-        return ScopeMappedResource.getAvailable(scopeContainer, roles);
+        return ScopeMappedResource.getAvailable(auth, scopeContainer, roles);
     }
 
     /**
@@ -113,7 +122,7 @@ public class ScopeMappedClientResource {
     @Produces(MediaType.APPLICATION_JSON)
     @NoCache
     public List<RoleRepresentation> getCompositeClientScopeMappings() {
-        auth.requireView();
+        viewPermission.require();
 
         Set<RoleModel> roles = scopedClient.getRoles();
         return ScopeMappedResource.getComposite(scopeContainer, roles);
@@ -127,7 +136,7 @@ public class ScopeMappedClientResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     public void addClientScopeMapping(List<RoleRepresentation> roles) {
-        auth.requireManage();
+        managePermission.require();
 
         for (RoleRepresentation role : roles) {
             RoleModel roleModel = scopedClient.getRole(role.getName());
@@ -135,8 +144,9 @@ public class ScopeMappedClientResource {
                 throw new NotFoundException("Role not found");
             }
             scopeContainer.addScopeMapping(roleModel);
-            adminEvent.operation(OperationType.CREATE).resourcePath(session.getContext().getUri(), roleModel.getId()).representation(roles).success();
         }
+
+        adminEvent.operation(OperationType.CREATE).resourcePath(session.getContext().getUri()).representation(roles).success();
     }
 
     /**
@@ -147,14 +157,17 @@ public class ScopeMappedClientResource {
     @DELETE
     @Consumes(MediaType.APPLICATION_JSON)
     public void deleteClientScopeMapping(List<RoleRepresentation> roles) {
-        auth.requireManage();
+        managePermission.require();
 
         if (roles == null) {
             Set<RoleModel> roleModels = KeycloakModelUtils.getClientScopeMappings(scopedClient, scopeContainer);//scopedClient.getClientScopeMappings(client);
+            roles = new LinkedList<>();
+
             for (RoleModel roleModel : roleModels) {
                 scopeContainer.deleteScopeMapping(roleModel);
+                roles.add(ModelToRepresentation.toRepresentation(roleModel));
             }
-            adminEvent.operation(OperationType.DELETE).resourcePath(session.getContext().getUri()).representation(roles).success();
+
         } else {
             for (RoleRepresentation role : roles) {
                 RoleModel roleModel = scopedClient.getRole(role.getName());
@@ -162,8 +175,9 @@ public class ScopeMappedClientResource {
                     throw new NotFoundException("Role not found");
                 }
                 scopeContainer.deleteScopeMapping(roleModel);
-                adminEvent.operation(OperationType.DELETE).resourcePath(session.getContext().getUri(), roleModel.getId()).representation(roles).success();
             }
         }
+
+        adminEvent.operation(OperationType.DELETE).resourcePath(session.getContext().getUri()).representation(roles).success();
     }
 }
